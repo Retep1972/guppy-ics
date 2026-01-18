@@ -4,7 +4,7 @@ from guppy_ics.protocols.base import ProtocolPlugin
 class IEC104Plugin(ProtocolPlugin):
     name = "IEC 60870-5-104"
     slug = "iec104"
-    safe_by_default = True
+    safe_by_default = False
     ports = [2404]
 
     def match(self, packet) -> bool:

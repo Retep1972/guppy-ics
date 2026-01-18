@@ -6,7 +6,7 @@ from guppy_ics.protocols.base import ProtocolPlugin
 class ModbusPlugin(ProtocolPlugin):
     name = "Modbus TCP"
     slug = "modbus"
-    safe_by_default = True
+    safe_by_default = False
     ports = [502]
 
     def match(self, packet) -> bool:

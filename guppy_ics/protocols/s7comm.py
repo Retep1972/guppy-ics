@@ -5,7 +5,7 @@ from guppy_ics.protocols.base import ProtocolPlugin
 class S7CommPlugin(ProtocolPlugin):
     name = "S7comm / ISO-on-TCP"
     slug = "s7comm"
-    safe_by_default = True
+    safe_by_default = False
     ports = [102]
 
     def match(self, packet) -> bool:

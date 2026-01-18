@@ -8,7 +8,7 @@ OPCUA_PORTS = {4840, 4843}
 class OPCUAPlugin(ProtocolPlugin):
     name = "OPC UA"
     slug = "opcua"
-    safe_by_default = True
+    safe_by_default = False
     ports = list(OPCUA_PORTS)
 
     def match(self, packet) -> bool:

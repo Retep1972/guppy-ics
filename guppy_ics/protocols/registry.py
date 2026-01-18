@@ -41,10 +41,9 @@ def load_plugins(enabled: List[str] | None = None) -> List[ProtocolPlugin]:
     return plugins
 
 
-def available_protocols() -> List[Dict[str, object]]:
-    """
-    Metadata for UI and API consumers.
-    """
+def available_protocols():
+    infrastructure = {"arp", "l2l3", "transport"}
+
     return [
         {
             "slug": p.slug,
@@ -52,4 +51,6 @@ def available_protocols() -> List[Dict[str, object]]:
             "safe_by_default": getattr(p, "safe_by_default", False),
         }
         for p in _all_plugins()
+        if p.slug not in infrastructure
     ]
+
