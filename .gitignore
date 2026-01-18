@@ -6,3 +6,4 @@ __pycache__/
 .idea/
 .vscode/
 uploaded_pcaps/
+guppy_ics.egg-info/
