@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guppy-ics"
+version = "0.1.0"
+description = "Passive ICS network discovery and analysis"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "peter" }
+]
+
+dependencies = [
+  "scapy",
+  "rich",
+]
+
+[project.scripts]
+guppy = "guppy_ics.cli.guppy:main"
