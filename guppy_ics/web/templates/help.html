@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Help – Guppy ICS{% endblock %}
+
+{% block content %}
+<h2>📘 PCAP Analysis Result – Help</h2>
+
+<p>
+This page explains how to interpret the results shown after uploading a PCAP file.
+All analysis is <strong>passive</strong> and based only on observed network traffic.
+</p>
+
+<hr>
+
+<h3>📊 Summary</h3>
+<p>
+The summary shows how many <strong>assets</strong>, <strong>communications</strong>,
+and <strong>events</strong> were discovered during analysis.
+</p>
+
+<hr>
+
+<h3>🧩 Assets</h3>
+<p>
+Assets represent discovered devices in the network.
+A single asset may combine multiple identifiers (MAC, IP).
+</p>
+
+<ul>
+    <li><strong>Label</strong>: Best available identifier (name, IP, or MAC)</li>
+    <li><strong>Role</strong>: Inferred function (PLC, IO device, client, server)</li>
+    <li><strong>Protocols</strong>: Protocols the asset participates in</li>
+</ul>
+
+<hr>
+
+<h3>🔁 Communications</h3>
+<p>
+Communications describe how assets interact.
+Each entry represents a <em>semantic communication relationship</em>, not individual packets.
+</p>
+
+<ul>
+    <li><strong>Protocol badge</strong>: Application or transport protocol</li>
+    <li><strong>Function</strong>: What the traffic represents (controls, client → server, L4)</li>
+    <li><strong>Direction</strong>: Source → Destination</li>
+    <li><strong>Ports</strong>: Shown when relevant (firewall design)</li>
+</ul>
+
+<h4>OSI Layer Indicators</h4>
+<ul>
+    <li><strong>L3</strong>: Network layer (IP)</li>
+    <li><strong>L4</strong>: Transport layer (TCP/UDP, application unknown)</li>
+</ul>
+
+<hr>
+
+<h3>🗺️ Topology</h3>
+<p>
+The topology section provides a logical view of the network based on observed communications.
+</p>
+
+<ul>
+    <li>Each root node is a source asset</li>
+    <li>Indented entries show outgoing communications</li>
+    <li>Only the highest meaningful protocol is shown</li>
+</ul>
+
+<hr>
+
+<h3>⚠️ Events</h3>
+<p>
+Events highlight notable protocol-level observations when supported by a protocol.
+Not all protocols generate events.
+</p>
+
+<hr>
+
+<h3>🔐 Intended Use</h3>
+<ul>
+    <li>Understand ICS system topology</li>
+    <li>Review control vs management traffic</li>
+    <li>Design host-based and network firewall rules</li>
+    <li>Document brownfield OT environments</li>
+</ul>
+
+<p class="muted">
+Guppy ICS does not actively probe or modify the network.
+</p>
+
+{% endblock %}

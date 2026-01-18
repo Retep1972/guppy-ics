@@ -1,0 +1,228 @@
+/* Base */
+body {
+    background-color: #0b0f0c;
+    color: #33ff66;
+    font-family: "Courier New", Courier, monospace;
+    margin: 0;
+    padding: 0;
+}
+
+/* Header */
+.topbar {
+    background: #000;
+    padding: 10px 20px;
+    border-bottom: 1px solid #33ff66;
+}
+
+.topbar h1 {
+    margin: 0;
+    font-size: 1.4em;
+}
+
+.subtitle {
+    font-size: 0.8em;
+    color: #66ff99;
+}
+
+/* Main content */
+.content {
+    padding: 20px;
+}
+
+/* Footer */
+.footer {
+    padding: 10px 20px;
+    border-top: 1px solid #33ff66;
+    font-size: 0.8em;
+    color: #66ff99;
+}
+
+/* Lists */
+ul {
+    list-style-type: "› ";
+    margin-left: 20px;
+}
+
+li {
+    margin: 6px 0;
+}
+
+/* Links */
+a {
+    color: #66ff99;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Utility */
+pre {
+    background: #000;
+    padding: 10px;
+    border: 1px solid #33ff66;
+    overflow-x: auto;
+}
+
+.muted {
+    color: #66cc88;
+}
+
+/* ---- Protocol badges ---- */
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-right: 6px;
+    border: 1px solid #33ff66;
+    border-radius: 3px;
+    font-size: 0.75em;
+    /* text-transform: lowercase;*/
+    background: #000;
+}
+
+/* Generic fallback */
+.badge-unknown {
+    color: #aaaaaa;
+    border-color: #666666;
+}
+
+/* Transport (usually hidden, but safe) */
+.badge-ip,
+.badge-tcp,
+.badge-udp {
+    color: #66ffcc;
+    border-color: #66ffcc;
+}
+
+/* ICS / OT protocols */
+.badge-profinet {
+    color: #00ffff;
+    border-color: #00ffff;
+}
+
+.badge-s7comm {
+    color: #ffff66;
+    border-color: #ffff66;
+}
+
+.badge-opcua {
+    color: #66aaff;
+    border-color: #66aaff;
+}
+
+.badge-modbus {
+    color: #ff9966;
+    border-color: #ff9966;
+}
+
+.badge-iec104 {
+    color: #ff66cc;
+    border-color: #ff66cc;
+}
+
+/* Function badge (request / response / rtc1_io) */
+.badge-function {
+    color: #66ff99;
+    border-color: #66ff99;
+}
+
+/* Communication list spacing */
+.comm-list {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.comm-item {
+    margin-bottom: 10px;
+}
+
+/* ---- Role badges ---- */
+
+.badge-role {
+    margin-left: 6px;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+/* Generic role fallback */
+.badge-role-unknown {
+    color: #aaaaaa;
+    border-color: #666666;
+}
+
+/* Common ICS roles */
+.badge-role-plc,
+.badge-role-profinet_controller {
+    color: #ff3333;
+    border-color: #ff3333;
+}
+
+.badge-role-profinet_device,
+.badge-role-io_device {
+    color: #ffaa33;
+    border-color: #ffaa33;
+}
+
+.badge-role-engineering_station,
+.badge-role-client {
+    color: #66ff99;
+    border-color: #66ff99;
+}
+
+.badge-role-opcua_server {
+    color: #66aaff;
+    border-color: #66aaff;
+}
+
+.badge-role-opcua_client {
+    color: #66ffaa;
+    border-color: #66ffaa;
+}
+
+/* ---- Topology tree ---- */
+
+.topology-tree {
+    list-style: none;
+    padding-left: 0;
+}
+
+.topology-node {
+    margin-bottom: 12px;
+}
+
+.topology-root {
+    font-weight: bold;
+    color: #33ff66;
+}
+
+.topology-node ul {
+    list-style: none;
+    margin-left: 20px;
+    padding-left: 10px;
+    border-left: 1px dashed #33ff66;
+}
+
+.topology-edge {
+    margin: 4px 0;
+    padding-left: 10px;
+    position: relative;
+}
+
+.topology-edge::before {
+    content: "→";
+    position: absolute;
+    left: -12px;
+    color: #66ff99;
+}
+
+.nav {
+    margin-top: 6px;
+}
+
+.nav a {
+    margin-right: 12px;
+    color: #66ff99;
+    font-size: 0.85em;
+}

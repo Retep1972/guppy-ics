@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Guppy ICS – Upload PCAP{% endblock %}
+
+{% block content %}
+
+<body>
+    <h1>📤 Upload PCAP</h1>
+
+    {% if error %}
+        <p style="color:red">{{ error }}</p>
+    {% endif %}
+
+    <form method="post" action="/upload/run" enctype="multipart/form-data">
+
+        <fieldset>
+            <legend>PCAP file</legend>
+            <input type="file" name="pcap" required>
+        </fieldset>
+
+        <br>
+
+        <fieldset>
+            <legend>Protocols to analyze</legend>
+
+            {% for proto in protocols %}
+                <label>
+                    <input
+                        type="checkbox"
+                        name="protocols"
+                        value="{{ proto.slug }}"
+                        {% if proto.safe_by_default %}checked{% endif %}
+                    >
+                    {{ proto.name }}
+                </label>
+                <br>
+            {% endfor %}
+        </fieldset>
+
+        <br>
+
+        <button type="submit">Analyze PCAP</button>
+    </form>
+
+    <p>
+        Supported formats: <code>.pcap</code>, <code>.pcapng</code>
+    </p>
+</body>
+
+{% endblock %}

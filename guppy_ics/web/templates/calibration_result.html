@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Guppy ICS – Calibration Result{% endblock %}
+
+{% block content %}
+
+<body>
+    <h1>✅ Calibration Result</h1>
+
+    <h2>Summary</h2>
+    <pre>{{ summary }}</pre>
+
+    <h2>Assets</h2>
+    {% for asset in assets %}
+        <pre>{{ asset }}</pre>
+    {% endfor %}
+
+    <h2>Communications</h2>
+    {% for comm in communications %}
+        <pre>{{ comm }}</pre>
+    {% endfor %}
+
+    <p>
+        <a href="/calibration">⬅ Back to calibration</a>
+    </p>
+</body>
+
+{% endblock %}

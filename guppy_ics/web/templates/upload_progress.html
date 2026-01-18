@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Guppy ICS – Processing</title>
+</head>
+<body>
+    <h1>⏳ Processing PCAP</h1>
+
+    <pre id="status">Starting...</pre>
+
+    <button id="cancel">Cancel analysis</button>
+
+    <script>
+        const busId = "{{ bus_id }}";
+        const status = document.getElementById("status");
+        const cancelBtn = document.getElementById("cancel");
+
+        const evtSource = new EventSource(`/upload/progress?bus_id=${busId}`);
+
+        evtSource.onmessage = function (event) {
+            status.textContent = `Processed ${event.data} packets...`;
+        };
+
+        evtSource.onerror = function () {
+            evtSource.close();
+            window.location.href = `/upload/result?bus_id=${busId}`;
+        };
+
+        cancelBtn.onclick = async function () {
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = "Cancelling...";
+
+            await fetch(`/upload/cancel?bus_id=${busId}`, {
+                method: "POST"
+            });
+
+            status.textContent = "Cancellation requested. Stopping...";
+        };
+    </script>
+</body>
+</html>

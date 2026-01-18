@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Guppy ICS – Calibration{% endblock %}
+
+{% block content %}
+<body>
+    <h1>🐟 Guppy ICS – Calibration Test</h1>
+
+    <p>
+        Run the built-in Modbus calibration PCAP to verify that
+        protocol parsing and asset discovery are working.
+    </p>
+
+    <form method="post" action="/calibration/run">
+        <button type="submit">
+            ▶ Run Modbus Calibration Test
+        </button>
+    </form>
+
+    <p style="margin-top: 2em; color: #666;">
+        File used: <code>MODBUS-TestDATAPart1.pcap</code>
+    </p>
+</body>
+
+{% endblock %}

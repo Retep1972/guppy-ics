@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Guppy ICS – PCAP Result{% endblock %}
+
+{% block content %}
+<body>
+    <h1>PCAP Analysis Result</h1>
+
+    <h2>Summary</h2>
+    <pre>{{ summary }}</pre>
+
+    <h3>Assets</h3>
+    <ul class="asset-list">
+    {% for asset in assets %}
+        <li class="asset-item">
+            <strong>{{ asset.label }}</strong>
+
+            {% if asset.role %}
+                <span class="badge badge-role badge-role-{{ asset.role }}">
+                    {{ asset.role }}
+                </span>
+            {% endif %}
+
+            <br>
+            <span class="muted">
+                Protocols: {{ asset.protocols | join(", ") }}
+            </span>
+        </li>
+    {% endfor %}
+    </ul>
+
+    <h3>Communications</h3>
+    <ul class="comm-list">
+    {% for comm in communications %}
+        <li class="comm-item">
+            <span class="badge badge-{{ comm.protocol }}">
+                {{ comm.protocol }}
+            </span>
+
+            {% if comm.function %}
+                <span class="badge badge-function">
+                    {{ comm.function }}
+                </span>
+            {% endif %}
+
+            <br>
+            {{ comm.src_label }} → {{ comm.dst_label }}
+
+            {% if comm.metadata and comm.metadata.dst_port is defined %}
+                <span class="muted">
+                    (port {{ comm.metadata.dst_port }})
+                </span>
+            {% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+
+    <h3>Topology</h3>
+
+    {% if topology %}
+    <ul class="topology-tree">
+    {% for src, edges in topology.items() %}
+        <li class="topology-node">
+            <span class="topology-root">{{ src }}</span>
+            <ul>
+            {% for edge in edges %}
+                <li class="topology-edge">{{ edge }}</li>
+            {% endfor %}
+            </ul>
+        </li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p><em>No communications detected.</em></p>
+    {% endif %}
+
+    <p>
+        <a href="/upload">⬅ Upload another PCAP</a>
+    </p>
+    <p>
+    <a href="/upload/firewall.csv?bus_id={{ request.query_params.bus_id }}">
+        ⬇ Download firewall rules (CSV)
+    </a>
+</p>
+</body>
+{% endblock %}

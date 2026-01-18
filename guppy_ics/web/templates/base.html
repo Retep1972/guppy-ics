@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<header class="topbar">
+    <nav class="nav">
+        <a href="/">Home</a>
+    </nav>
+</header>
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Guppy ICS{% endblock %}</title>
+
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    {% block head %}{% endblock %}
+</head>
+<body>
+
+<main class="content">
+    {% block content %}
+    {% endblock %}
+</main>
+
+<footer class="footer">
+    <span>Passive ICS Network Analysis</span>
+    <nav class="nav">
+        <a href="/help">Help</a>
+    </nav>
+</footer>
+
+</body>
+</html>
