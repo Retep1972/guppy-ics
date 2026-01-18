@@ -44,7 +44,7 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 
-python -m guppy_ics.web.app
+python -m uvicorn guppy_ics.web.app:app --reload
 
 http://127.0.0.1:8000
 
