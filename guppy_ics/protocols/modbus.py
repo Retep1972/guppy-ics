@@ -31,7 +31,7 @@ class ModbusPlugin(ProtocolPlugin):
             src_ip = ip.src
             dst_ip = ip.dst
 
-            # 🔗 Link L2 <-> L3 identities FIRST
+            # Link L2 <-> L3 identities FIRST
             if hasattr(packet, "src") and ":" in str(packet.src):
                 state.link_identifiers(
                     packet.src,
@@ -70,7 +70,5 @@ class ModbusPlugin(ProtocolPlugin):
             )
 
         except Exception as e:
-            # TEMP: log once while debugging
-            print("Modbus process error:", e)
             return
 

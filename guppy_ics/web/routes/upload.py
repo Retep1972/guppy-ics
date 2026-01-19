@@ -387,22 +387,22 @@ def export_firewall_csv(bus_id: str):
         if not asset:
             return None
 
-        # 1️⃣ Station / device name
+        # Station / device name
         name = asset.get("metadata", {}).get("station_name")
         if name:
             return name
 
-        # 2️⃣ Role
+        # Role
         role = asset.get("role")
         if role:
             return role.upper()
 
-        # 3️⃣ IP address
+        # IP address
         ips = asset.get("identifiers", {}).get("ip")
         if ips:
             return sorted(ips)[0]
 
-        # 4️⃣ MAC address
+        # MAC address
         macs = asset.get("identifiers", {}).get("mac")
         if macs:
             return sorted(macs)[0]

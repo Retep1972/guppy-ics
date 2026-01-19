@@ -18,11 +18,11 @@ class ProfinetPlugin(ProtocolPlugin):
 
     def match(self, packet) -> bool:
         try:
-            # 1️⃣ Native Ethernet PNIO
+            # 1Native Ethernet PNIO
             if hasattr(packet, "type") and packet.type == ETHERTYPE_PROFINET:
                 return True
 
-            # 2️⃣ Scapy-decoded Raw PNIO payload
+            # Scapy-decoded Raw PNIO payload
             if packet.haslayer("Raw"):
                 raw = bytes(packet["Raw"].load)
                 if len(raw) >= 2:
@@ -53,8 +53,6 @@ class ProfinetPlugin(ProtocolPlugin):
             # ----------------------------
             # Future-proof: IP-based PNIO
             # ----------------------------
-            # Some PROFINET traffic may be encapsulated over IP (PNIO-CM, alarms, etc.)
-            # We DO NOT merge identities yet — just detect and switch identifiers.
             if packet.haslayer("IP"):
                 ip = packet["IP"]
                 try:
@@ -76,7 +74,7 @@ class ProfinetPlugin(ProtocolPlugin):
             frame_id = struct.unpack(">H", payload[0:2])[0]
 
             # -------------------------------------------------
-            # 1️⃣ RTC1 / cyclic IO frames (0x8000–0xBFFF)
+            # RTC1 / cyclic IO frames (0x8000–0xBFFF)
             # -------------------------------------------------
             # RTC1 cyclic IO
             if 0x8000 <= frame_id <= 0xBFFF:
@@ -93,7 +91,7 @@ class ProfinetPlugin(ProtocolPlugin):
                 return
 
             # -----------------------------------------
-            # 2️⃣ DCP Identify / Set (0xFEFE / 0xFEFD)
+            # DCP Identify / Set (0xFEFE / 0xFEFD)
             # -----------------------------------------
             if frame_id not in (0xFEFE, 0xFEFD):
                 return

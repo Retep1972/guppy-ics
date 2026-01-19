@@ -411,15 +411,15 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--out", default=None, help="Write report to a file (e.g. report.txt)")
     replay.set_defaults(func=cmd_replay)
 
-    # Optional: keep your old name as an alias
-    ingest = sub.add_parser("ingest", help="(alias) Replay a PCAP and generate a report")
-    ingest.add_argument("pcap", help="Path to .pcap/.pcapng")
-    ingest.add_argument("--protocol", action="append", help="Enable only these protocols (repeatable)")
-    ingest.add_argument("--limit", type=int, default=None, help="Limit number of packets processed")
-    ingest.add_argument("--only", choices=["all", "assets", "comms", "topology"], default="all")
-    ingest.add_argument("--format", choices=["text", "json"], default="text")
-    ingest.add_argument("--out", default=None)
-    ingest.set_defaults(func=cmd_replay)
+    # Old. check if anything breaks
+    #ingest = sub.add_parser("ingest", help="(alias) Replay a PCAP and generate a report")
+    #ingest.add_argument("pcap", help="Path to .pcap/.pcapng")
+    #ingest.add_argument("--protocol", action="append", help="Enable only these protocols (repeatable)")
+    #ingest.add_argument("--limit", type=int, default=None, help="Limit number of packets processed")
+    #ingest.add_argument("--only", choices=["all", "assets", "comms", "topology"], default="all")
+    #ingest.add_argument("--format", choices=["text", "json"], default="text")
+    #ingest.add_argument("--out", default=None)
+    #ingest.set_defaults(func=cmd_replay)
 
     live = sub.add_parser("live", help="Passive live capture from an interface")
     live_sub = live.add_subparsers(
