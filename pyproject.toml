@@ -16,7 +16,9 @@ authors = [
 dependencies = [
   "scapy",
   "rich",
+  "uvicorn",
+  "fastapi"
 ]
 
 [project.scripts]
-guppy = "guppy_ics.cli.guppy:main"
+guppy = "guppy_ics.launcher:main"

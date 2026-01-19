@@ -3,20 +3,23 @@
 **Guppy ICS** is a free, open-source, passive Industrial Control System (ICS)
 network analysis tool.
 
-It analyzes PCAP files to discover:
-- assets (PLCs, IO devices, HMIs, engineering stations)
-- communications between assets
-- network topology
-- transport-level firewall rules
+It analyzes PCAP files and live traffic to discover:
 
-Guppy ICS is inspired by tools like GrassMarlin, but built with a modern
-Python architecture and extensibility in mind.
+- Assets (PLCs, IO devices, HMIs, engineering stations)
+- Communications between assets
+- Logical network topology
+- Transport-level firewall intent
+
+Guppy ICS is inspired by tools like GrassMarlin, but built with a modern,
+extensible Python architecture and designed for both OT engineers and
+security practitioners.
 
 ---
 
-##Features
+## Features
 
-- Passive PCAP analysis (no active probing)
+- Passive analysis (no active probing)
+- PCAP replay and live capture
 - Asset discovery (IP, MAC, role inference)
 - Protocol support:
   - PROFINET IO
@@ -26,268 +29,267 @@ Python architecture and extensibility in mind.
   - IEC 60870-5-104
 - Automatic identity linking (MAC ↔ IP)
 - Logical topology generation
-- Firewall rule export (CSV)
-- Web UI (FastAPI + Jinja2)
+- Firewall rule generation (CSV)
+- Web UI (FastAPI)
+- Command Line Interface (CLI)
 
 ---
 
-## Getting Started
+## Installation
 
-### 1️⃣ Clone the repository
+### Requirements
+
+- Python **3.9+**
+- Packet capture privileges for live mode (root / Administrator)
+- Supported platforms:
+  - Linux (full support)
+  - macOS (PCAP replay, limited live capture)
+  - Windows (PCAP replay)
+
+---
+
+### Install from source (recommended)
 
 ```bash
-git clone https://github.com/<your-username>/guppy-ics.git
+git clone https://github.com/Retep1972/guppy-ics.git
 cd guppy-ics
 
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-pip install -r requirements.txt
-
-python -m uvicorn guppy_ics.web.app:app --reload
-
-http://127.0.0.1:8000
-
-Firewall Rule Export
-
-After analyzing a PCAP, firewall rules can be downloaded as CSV.
-Rules are grouped per host and can be used as input for host-based
-or network firewall configuration.
-
-Disclaimer
-
-Guppy ICS performs passive analysis only.
-It does not send any packets or modify the network.
-
-This tool is intended for:
-
-documentation
-
-analysis
-
-security assessment
-
-learning and research
-
-License see licence in Repo
-
-#########################################################################
-Command Line Interface (CLI)
-
-Guppy ICS provides a full-featured command line interface (CLI) in addition to the browser-based UI.
-The CLI is designed for:
-
-Headless operation (SSH, sensors, jump hosts)
-
-Offline PCAP analysis
-
-Live passive network monitoring
-
-Report generation
-
-Firewall rule generation
-
-Installation (CLI)
-
-Requirements:
-
-Python 3.9 or newer
-
-Packet capture privileges for live mode (root / Administrator)
-
-Supported OS:
-
-Linux (full support)
-
-macOS (PCAP replay, limited live capture)
-
-Windows (PCAP replay)
-
-#-----------------------------------------------------------------------------------
-
-Install from source (recommended)
-
-Clone the repository and install Guppy ICS in editable mode:
-
-git clone https://github.com/Retep1972/guppy-ics.git
-
-cd guppy-ics
 pip install -e .
-
-This installs the guppy command and keeps local changes active (ideal for development and sensor deployments).
+```
 
 Verify installation:
 
+```bash
 guppy --help
+```
 
-CLI Overview
+---
 
+## Starting Guppy ICS
+
+Running `guppy` without arguments starts an interactive launcher menu.
+
+```bash
 guppy
-├─ replay Analyze a PCAP file
-├─ live Live passive network monitoring
-└─ firewall Generate firewall rules
+```
+
+You will be presented with:
+
+```
+Guppy ICS
+==========
+1) Browser (Web UI)
+2) Command Line Interface (CLI)
+q) Quit
+```
+
+### Browser (Web UI)
+
+Select option **1** to start the web interface.
+
+The Web UI will be available at:
+
+```
+http://127.0.0.1:8000
+```
+
+Stop the server with **Ctrl-C**.
+
+### Command Line Interface (CLI)
+
+Select option **2** to open the CLI help, or skip the menu entirely by
+calling CLI commands directly.
+
+Example (skip menu):
+
+```bash
+guppy replay capture.pcap
+```
+
+This behavior makes Guppy suitable for both interactive use and automation.
+
+---
+
+## CLI Overview
+
+```text
+guppy
+ ├─ replay     Analyze a PCAP file
+ ├─ live       Live passive network monitoring
+ └─ firewall   Generate firewall rules
+```
 
 Get help at any level:
 
+```bash
 guppy --help
 guppy replay --help
 guppy live --help
 guppy firewall --help
+```
 
-PCAP Replay Mode
+---
 
-Replay mode analyzes an existing PCAP file and generates assets, communications, and topology.
+## PCAP Replay Mode
+
+Replay mode analyzes an existing PCAP file and generates assets,
+communications, and topology.
 
 Basic replay:
 
+```bash
 guppy replay capture.pcap
+```
 
 Limit protocols (recommended for ICS environments):
 
+```bash
 guppy replay capture.pcap --protocol profinet --protocol s7comm
+```
 
 Limit packets (faster testing):
 
+```bash
 guppy replay capture.pcap --limit 5000
+```
 
-Output formats
+### Output formats
 
 Text output (default):
 
+```bash
 guppy replay capture.pcap
+```
 
 JSON output (machine-readable):
 
+```bash
 guppy replay capture.pcap --format json
+```
 
 Write output to file:
 
+```bash
 guppy replay capture.pcap --out report.txt
 guppy replay capture.pcap --format json --out report.json
+```
 
-Section filtering
+### Section filtering
 
-Show only assets:
-
+```bash
 guppy replay capture.pcap --only assets
-
-Show only communications:
-
 guppy replay capture.pcap --only comms
-
-Show only topology:
-
 guppy replay capture.pcap --only topology
+```
 
-Live Monitoring Mode
+---
 
-Live mode performs passive network monitoring on a network interface and periodically renders results.
+## Live Monitoring Mode
 
-WARNING: Live capture requires packet capture privileges (root / Administrator).
+Live mode performs passive network monitoring on a network interface and
+periodically renders results.
 
-Live asset discovery:
+**Warning:** Live capture requires packet capture privileges.
 
+### Live assets
+
+```bash
 guppy live assets --iface eth0
+```
 
-Shows:
+Shows discovered devices, identifiers, roles, vendors, and protocols.
 
-PLCs, HMIs, IO devices, servers
+### Live communications
 
-Identifiers (IP / MAC)
-
-Roles, vendors, and detected protocols
-
-Live communications:
-
+```bash
 guppy live comms --iface eth0
+```
 
-Shows:
+Shows who communicates with whom, including application protocols and ports.
+Low-level transport noise is filtered out.
 
-Who communicates with whom
+### Live topology
 
-Application-layer protocols (Profinet, S7comm, Modbus, etc.)
-
-Ports and communication metadata
-
-Transport-level noise filtered out
-
-Live topology:
-
+```bash
 guppy live topology --iface eth0
+```
 
-Shows:
+Shows a logical, protocol-aware topology derived from observed traffic.
 
-Logical topology derived from observed communications
+### Common live options
 
-Directional, protocol-aware edges
-
-Application context (protocol / port / function)
-
-Common live options
-
---protocol <name>
-Limit analysis to specific protocols (repeatable)
-
---bpf <filter> specifies a Berkeley Packet Filter (BPF) expression that is applied during packet capture
-It allows you to limit which packets are captured before they are processed by Guppy, reducing noise and CPU load
-Apply a BPF capture filter (example: "tcp port 102")
-
---interval <seconds>
-Refresh interval in seconds (default: 5)
-
---once
-Render a single snapshot and exit
-
---out <file>
-Write snapshot output to a file
-
-#---------------------------------------------------------------------------------------
+```text
+--protocol <name>     Limit analysis to specific protocols (repeatable)
+--bpf <filter>        Berkeley Packet Filter applied at capture time
+--interval <seconds>  Refresh interval (default: 5)
+--once                Render a single snapshot and exit
+--out <file>          Write output to a file
+```
 
 Example:
 
+```bash
 guppy live topology --iface eth0 --protocol profinet --interval 10 --out topology.txt
+```
 
-Firewall Rule Generation
+---
+
+## Firewall Rule Generation
 
 Guppy can generate firewall intent directly from observed traffic.
 
 Generate firewall rules as CSV:
 
+```bash
 guppy firewall csv capture.pcap
+```
 
-Default output file:
+Default output:
 
+```
 firewall_rules.csv
+```
 
-Custom output file:
+Custom output:
 
+```bash
 guppy firewall csv capture.pcap --out profinet_rules.csv
+```
 
-Firewall CSV format
+### Firewall CSV format
 
+```csv
 source,destination,protocol,transport,src_port,dst_port,service,comment
+```
 
 Example:
 
+```csv
 192.168.0.10,192.168.0.20,profinet,udp,,34964,,plc → io-device
 192.168.0.5,192.168.0.10,s7comm,tcp,,102,ReadVar,hmi → plc
+```
 
 The CSV can be:
+- Reviewed manually
+- Imported into Excel
+- Converted to firewall rules
+- Used for audits and rule diffing
 
-Reviewed manually
+---
 
-Imported into Excel
+## Notes and Limitations
 
-Converted to iptables / nftables / vendor ACLs
+- Guppy performs **passive analysis only**
+- No packets are sent into the network
+- Topology is logical, not physical cabling
+- Firewall output represents observed intent, not enforcement policy
+- Windows live capture depends on capture backend support
 
-Used for rule diffing and audits
+---
 
-Notes and Limitations
+## License
 
-Live mode is passive only (no packet injection)
-
-Topology is logical, not physical switch layout
-
-Firewall output represents observed intent, not enforcement policy
-
-Windows live capture depends on capture backend support
+See LICENSE file in the repository.
