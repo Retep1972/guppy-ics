@@ -1,8 +1,6 @@
-from pathlib import Path
 from fastapi.templating import Jinja2Templates
-
-BASE_DIR = Path(__file__).resolve().parent
+from importlib.resources import files
 
 templates = Jinja2Templates(
-    directory=str(BASE_DIR / "templates")
+    directory=str(files("guppy_ics.web").joinpath("templates"))
 )

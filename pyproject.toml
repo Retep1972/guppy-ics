@@ -22,5 +22,11 @@ dependencies = [
   "scapy",
 ]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+guppy_ics = ["web/templates/*.html"]
+
 [project.scripts]
 guppy = "guppy_ics.launcher:main"
