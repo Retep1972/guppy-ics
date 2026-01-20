@@ -14,10 +14,12 @@ authors = [
 ]
 
 dependencies = [
-  "scapy",
-  "rich",
+  "fastapi",
   "uvicorn",
-  "fastapi"
+  "jinja2",
+  "python-multipart",
+  "rich",
+  "scapy",
 ]
 
 [project.scripts]
