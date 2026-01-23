@@ -185,47 +185,6 @@ def _extract_comms(state: Any) -> List[Dict[str, Any]]:
     out.sort(key=lambda x: (str(x.get("protocol", "")), -int(x.get("count", 0) or 0)))
     return out
 
-
-def _extract_topology_edges(state: Any) -> List[Dict[str, Any]]:
-    """
-    Best-effort: tries common shapes:
-      - state.topology (list/dict)
-      - state.links / state.edges
-      - state.topology_edges
-    Returns list of dict edges with src/dst and metadata where possible.
-    """
-    for attr in ("topology", "topology_edges", "links", "edges"):
-        val = getattr(state, attr, None)
-        if not val:
-            continue
-        val = _to_plain(val)
-
-        # If it's already a list[dict], good.
-        if isinstance(val, list) and all(isinstance(x, dict) for x in val):
-            return val
-
-        # If it's a dict of edges -> normalize
-        if isinstance(val, dict):
-            edges = []
-            for k, v in val.items():
-                if isinstance(v, dict):
-                    edges.append(v)
-                else:
-                    edges.append({"key": str(k), "value": v})
-            return edges
-
-        # If it's list of tuples etc
-        if isinstance(val, list):
-            edges = []
-            for x in val:
-                if isinstance(x, (list, tuple)) and len(x) >= 2:
-                    edges.append({"src": x[0], "dst": x[1], "meta": x[2:]})
-            if edges:
-                return edges
-
-    return []
-
-
 def render_report_text(state: Any, only: str = "all") -> str:
     parts: List[str] = []
 
@@ -546,10 +505,11 @@ def run_live(args, render_fn):
         packet_limit=None,
         timeout=None,
     )
+    enabled = args.protocol if args.protocol else None
 
     state = analyze_source(
         source,
-        enabled_protocols=args.protocol,
+        enabled_protocols=enabled,
     )
 
     try:

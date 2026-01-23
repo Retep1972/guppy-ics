@@ -6,7 +6,6 @@ from guppy_ics.web.deps import templates
 
 router = APIRouter()
 
-
 @router.get("/calibration", response_class=HTMLResponse)
 def calibration_page(request: Request):
     return templates.TemplateResponse(
