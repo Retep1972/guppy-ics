@@ -18,7 +18,14 @@ class LiveInterfaceSource(PacketSource):
         self.packet_limit = packet_limit
         self.timeout = timeout
 
-    def packets(self):
+    def packets(self) -> Iterable[object]:
+        print("[DEBUG] packets() entered:", self.interface, self.bpf_filter)
+        """
+        Passive streaming sniffing.
+        - Runs scapy.sniff() in a background thread (sniff() blocks).
+        - Yields packets as they arrive via a queue.
+        - Stops when sniff finishes (count/timeout) or on external termination.
+        """
         q: Queue = Queue()
 
         def on_packet(pkt):
@@ -29,11 +36,11 @@ class LiveInterfaceSource(PacketSource):
                 iface=self.interface,
                 filter=self.bpf_filter,
                 prn=on_packet,
-                store=False,
+                store=False,  # critical: don't buffer in memory
                 count=self.packet_limit,
                 timeout=self.timeout,
             )
-            q.put(None)  # signal end
+            q.put(None)  # signal end of capture
 
         t = threading.Thread(target=sniffer, daemon=True)
         t.start()
