@@ -226,26 +226,29 @@ def render_report_text(state: Any, only: str = "all") -> str:
 
         parts.append("=== Communications ===")
         rows = []
-        for c in comms:
-            proto = str(c.get("protocol", "-"))
+        if not comms:
+            parts.append("(no industrial communications observed)")
+        else:
+            for c in comms:
+                proto = str(c.get("protocol", "-"))
 
-            src_id = c.get("src_asset_id")
-            dst_id = c.get("dst_asset_id")
+                src_id = c.get("src_asset_id")
+                dst_id = c.get("dst_asset_id")
 
-            src = labels.get(str(src_id), str(src_id or "-"))
-            dst = labels.get(str(dst_id), str(dst_id or "-"))
+                src = labels.get(str(src_id), str(src_id or "-"))
+                dst = labels.get(str(dst_id), str(dst_id or "-"))
 
-            meta = c.get("metadata", {}) or {}
-            src_port = meta.get("src_port", "-")
-            dst_port = meta.get("dst_port", "-")
+                meta = c.get("metadata", {}) or {}
+                src_port = meta.get("src_port", "-")
+                dst_port = meta.get("dst_port", "-")
 
-            # optional: packet/byte counts if present
-            count = c.get("count", c.get("packets", "-"))
+                # optional: packet/byte counts if present
+                count = c.get("count", c.get("packets", "-"))
 
-            rows.append([proto, src, str(src_port), dst, str(dst_port), str(count)])
+                rows.append([proto, src, str(src_port), dst, str(dst_port), str(count)])
 
-        parts.append(_table(rows, headers=["Protocol", "Source", "S.Port", "Destination", "D.Port", "Count"]))
-        parts.append("")
+            parts.append(_table(rows, headers=["Protocol", "Source", "S.Port", "Destination", "D.Port", "Count"]))
+            parts.append("")
 
 
     if only in ("all", "topology"):
