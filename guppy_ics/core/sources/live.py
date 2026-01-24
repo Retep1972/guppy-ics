@@ -2,6 +2,7 @@ from scapy.all import sniff
 from queue import Queue
 from typing import Iterable, Optional
 import threading
+from guppy_ics.core.sources.base import PacketSource
 
 class LiveInterfaceSource(PacketSource):
     def __init__(
