@@ -17,7 +17,7 @@ from guppy_ics.protocols.registry import available_protocols
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploaded_pcaps"
 UPLOAD_DIR.mkdir(exist_ok=True)
 TRANSPORT_PROTOCOLS = {"ip", "tcp", "udp"}
-
+BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
 
 router = APIRouter()
 _progress_buses = {}
@@ -40,6 +40,10 @@ FUNCTION_NORMALIZATION = {
 # -------------------------------------------------
 # Helper: human-readable asset label (PUT IT HERE)
 # -------------------------------------------------
+def is_broadcast_identifier(identifier: str | None) -> bool:
+    if not identifier:
+        return False
+    return identifier.lower() == BROADCAST_MAC
 
 def primary_label(asset: dict) -> str:
     """
@@ -263,8 +267,13 @@ def upload_result(request: Request, bus_id: str):
         }
 
         label = primary_label(a)
-        asset_labels[a["asset_id"]] = label
-        a["label"] = label
+
+        if is_broadcast_identifier(label):
+            a["role"] = "broadcast"
+            a["vendor"] = None
+        else:
+            asset_labels[a["asset_id"]] = label
+            a["label"] = label
 
         assets.append(a)
 
@@ -278,24 +287,32 @@ def upload_result(request: Request, bus_id: str):
         return sorted(ips)[0] if ips else None
 
     def asset_display(asset):
-        """
-        station_name (ip) | ip | mac
-        """
         if not asset:
             return "unknown"
 
-        label = asset.get("label")
+        label = asset.get("label") or asset.get("asset_id")
 
         ids = asset.get("identifiers", {})
+
         ips = ids.get("ip")
+        ipv6s = ids.get("ipv6")
         macs = ids.get("mac")
 
+        # Prefer IPv4
         if ips:
-            return f"{label} ({sorted(ips)[0]})"
+            return f"{label} (IP: {sorted(ips)[0]})"
+
+        # Then IPv6 (explicitly marked!)
+        if ipv6s:
+            print(ipv6s)
+            return f"{label} (IPV6: {sorted(ipv6s)[0]})"
+
+        # Finally MAC
         if macs:
-            return f"{label} ({sorted(macs)[0]})"
+            return f"{label} (MAC: {sorted(macs)[0]})"
 
         return label
+
 
     # -------------------------
     # Communications + Topology
@@ -424,7 +441,12 @@ def export_firewall_csv(bus_id: str):
 
         src_asset = state.assets.get(comm["src_asset_id"])
         dst_asset = state.assets.get(comm["dst_asset_id"])
-
+        # Skip broadcast endpoints entirely
+        if (
+            is_broadcast_identifier(src_asset.get("identifier") if src_asset else None)
+            or is_broadcast_identifier(dst_asset.get("identifier") if dst_asset else None)
+        ):
+            continue
         src_ip = first_ip(src_asset)
         dst_ip = first_ip(dst_asset)
         if not src_ip or not dst_ip:

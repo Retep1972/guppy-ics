@@ -250,10 +250,18 @@ class AnalysisState:
         }
 
     def _infer_identifier_type(self, identifier: str) -> str:
+        # MAC address
         if ":" in identifier and len(identifier.split(":")) == 6:
             return "mac"
+
+        # IPv4
         if "." in identifier:
             return "ip"
+
+        # IPv6 (contains ':' but is not MAC)
+        if ":" in identifier:
+            return "ipv6"
+
         return "unknown"
 
     def infer_profinet_roles(self) -> None:

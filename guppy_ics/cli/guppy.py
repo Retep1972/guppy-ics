@@ -11,6 +11,12 @@ from guppy_ics.core.sources.live import LiveInterfaceSource
 from collections import defaultdict
 
 TRANSPORT_PROTOCOLS = {"ip", "ipv4", "ipv6", "tcp", "udp"}
+BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
+
+def is_broadcast_identifier(identifier: str | None) -> bool:
+    if not identifier:
+        return False
+    return identifier.lower() == BROADCAST_MAC
 
 # ----------------------------
 # Rendering helpers
@@ -65,9 +71,6 @@ def build_topology_from_communications(communications: List[dict], state: Any) -
     """
 
     def asset_display(asset: Optional[dict]) -> str:
-        """
-        station_name (ip) | ip | mac
-        """
         if not asset:
             return "unknown"
 
@@ -75,13 +78,18 @@ def build_topology_from_communications(communications: List[dict], state: Any) -
 
         ids = asset.get("identifiers", {})
         ips = ids.get("ip")
+        ipv6s = ids.get("ipv6")
         macs = ids.get("mac")
 
         if ips:
-            return f"{label} ({sorted(ips)[0]})"
+            return f"{label} (IP: {sorted(ips)[0]})"
+        if ipv6s:
+            return f"{label} (IPV6: {sorted(ipv6s)[0]})"
         if macs:
-            return f"{label} ({sorted(macs)[0]})"
+            return f"{label} (MAC: {sorted(macs)[0]})"
+
         return label
+
 
     topology: Dict[str, set] = {}
 
@@ -206,10 +214,18 @@ def render_report_text(state: Any, only: str = "all") -> str:
         parts.append("=== Assets ===")
         rows = []
         for a in assets:
-            ident = str(a.get("identifier", "-"))
-            itype = str(a.get("identifier_type", "-"))
-            role = str(a.get("role", "-") or "-")
-            vendor = str(a.get("vendor", "-") or "-")
+            ids = a.get("identifiers", {})
+            ident = " | ".join(
+                f"{k.upper()}: {', '.join(v)}"
+                for k, v in ids.items()
+            )
+            itype = "-"
+            if is_broadcast_identifier(ident):
+                role = "broadcast"
+                vendor = "-"
+            else:
+                role = str(a.get("role", "-") or "-")
+                vendor = str(a.get("vendor", "-") or "-")
             prots = a.get("protocols", []) or []
             rows.append([ident, itype, role, vendor, _badge_list(prots)])
         parts.append(_table(rows, headers=["Identifier", "Type", "Role", "Vendor", "Protocols"]))
@@ -456,14 +472,19 @@ def generate_firewall_rules(state: Any) -> List[dict]:
     seen = set()
 
     for c in comms:
-        src = assets.get(c.get("src_asset_id"))
-        dst = assets.get(c.get("dst_asset_id"))
-
-        if not src or not dst:
+        src_asset = assets.get(c.get("src_asset_id"))
+        dst_asset = assets.get(c.get("dst_asset_id"))
+        if (
+            is_broadcast_identifier(src_asset.get("identifier") if src_asset else None)
+            or is_broadcast_identifier(dst_asset.get("identifier") if dst_asset else None)
+        ):
             continue
 
-        src_ids = src.get("identifiers", {})
-        dst_ids = dst.get("identifiers", {})
+        if not src_asset or not dst_asset:
+            continue
+
+        src_ids = src_asset.get("identifiers", {})
+        dst_ids = dst_asset.get("identifiers", {})
 
         src_ip = next(iter(sorted(src_ids.get("ip", []))), None)
         dst_ip = next(iter(sorted(dst_ids.get("ip", []))), None)
@@ -493,7 +514,7 @@ def generate_firewall_rules(state: Any) -> List[dict]:
             "src_port": src_port or "",
             "dst_port": dst_port or "",
             "service": service,
-            "comment": f"{src.get('role','')} → {dst.get('role','')}".strip()
+            "comment": f"{src_asset.get('role','')} → {dst_asset.get('role','')}".strip()
         })
 
     return rules

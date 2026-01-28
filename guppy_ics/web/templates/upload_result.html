@@ -22,12 +22,25 @@
             {% endif %}
 
             <br>
+
             <span class="muted">
                 Protocols: {{ asset.protocols | join(", ") }}
+            </span>
+
+            <br>
+
+            <span class="muted">
+                Identifiers:
+                {% for id_type, values in asset.identifiers.items() %}
+                    <strong>{{ id_type | upper }}</strong>:
+                    {{ values | join(", ") }}
+                    {% if not loop.last %}|{% endif %}
+                {% endfor %}
             </span>
         </li>
     {% endfor %}
     </ul>
+
 
     <h3>Communications</h3>
     <ul class="comm-list">

@@ -11,6 +11,7 @@ from guppy_ics.protocols.transport import TransportPlugin
 from guppy_ics.protocols.s7comm import S7CommPlugin
 from guppy_ics.protocols.opcua import OPCUAPlugin
 from guppy_ics.protocols.iec104 import IEC104Plugin
+from guppy_ics.protocols.ipv6 import IPv6DetectionPlugin
 
 
 def _all_plugins() -> List[ProtocolPlugin]:
@@ -23,6 +24,7 @@ def _all_plugins() -> List[ProtocolPlugin]:
         ProfinetPlugin(),
         ArpPlugin(),
         L2L3LinkerPlugin(),
+        IPv6DetectionPlugin(),
         TransportPlugin(),
         S7CommPlugin(),
         OPCUAPlugin(),
@@ -35,14 +37,14 @@ def load_plugins(enabled: List[str] | None = None) -> List[ProtocolPlugin]:
 
     if enabled:
         enabled_set = set(enabled)
-        always = {"arp", "l2l3", "transport"}
+        always = {"arp", "l2l3", "transport", "ipv6"}
         return [p for p in plugins if p.slug in enabled_set or p.slug in always]
 
     return plugins
 
 
 def available_protocols():
-    infrastructure = {"arp", "l2l3", "transport"}
+    infrastructure = {"arp", "l2l3", "transport", "ipv6"}
 
     return [
         {
