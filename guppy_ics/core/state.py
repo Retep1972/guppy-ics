@@ -1,13 +1,21 @@
 import uuid
 from typing import Dict, Any, Optional
 
-
 class AnalysisState:
     """
     Central in-memory state for a Guppy ICS analysis run.
     Protocol plugins write here; persistence happens later.
     """
 
+    def _is_valid_mac(self, mac: str | None) -> bool:
+        if not mac:
+            return False
+        mac = mac.lower()
+        return mac not in {
+            "00:00:00:00:00:00",
+            "ff:ff:ff:ff:ff:ff",
+        }
+    
     def __init__(self):
         # asset_id -> asset dict
         self.assets: Dict[str, Dict[str, Any]] = {}
@@ -150,9 +158,31 @@ class AnalysisState:
 
         if a_id == b_id:
             return a_id
-
+        
         a_type = self._infer_identifier_type(a)
         b_type = self._infer_identifier_type(b)
+
+        # -------------------------------------------------
+        # SAFETY GUARD: prevent over-merging via MACs
+        # -------------------------------------------------
+
+        # Never trust placeholder or broadcast MACs
+        if a_type == "mac" and not self._is_valid_mac(a):
+            return a_id
+        if b_type == "mac" and not self._is_valid_mac(b):
+            return b_id
+
+        # Prevent MACs from absorbing many unrelated IPs
+        # (routers, gateways, NAT, proxies)
+        if a_type == "mac" and b_type == "ip":
+            existing_ips = self.assets[a_id].get("identifiers", {}).get("ip", set())
+            if len(existing_ips) >= 2:
+                return a_id
+
+        if b_type == "mac" and a_type == "ip":
+            existing_ips = self.assets[b_id].get("identifiers", {}).get("ip", set())
+            if len(existing_ips) >= 2:
+                return b_id
 
         # Prefer MAC as canonical anchor
         keep_id, drop_id = a_id, b_id

@@ -9,7 +9,7 @@ SNMP_PORTS = {161, 162}
 class SNMPPlugin(ProtocolPlugin):
     name = "SNMP"
     slug = "snmp"
-    safe_by_default = True
+    safe_by_default = False
     ports = list(SNMP_PORTS)
 
     def match(self, packet) -> bool:

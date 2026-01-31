@@ -37,13 +37,25 @@ def _all_plugins() -> List[ProtocolPlugin]:
 
 def load_plugins(enabled: List[str] | None = None) -> List[ProtocolPlugin]:
     plugins = _all_plugins()
+    infrastructure = {"arp", "l2l3", "transport", "ipv6"}
 
-    if enabled:
-        enabled_set = set(enabled)
-        always = {"arp", "l2l3", "transport", "ipv6"}
-        return [p for p in plugins if p.slug in enabled_set or p.slug in always]
+    if enabled is None:
+        return plugins
 
-    return plugins
+    enabled_set = set(enabled)
+
+    # If user selected nothing, enable safe-by-default protocols
+    if not enabled_set:
+        enabled_set = {
+            p.slug for p in plugins
+            if getattr(p, "safe_by_default", False)
+        }
+
+    return [
+        p for p in plugins
+        if p.slug in enabled_set or p.slug in infrastructure
+    ]
+
 
 
 def available_protocols():

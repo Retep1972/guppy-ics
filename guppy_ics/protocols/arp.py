@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from guppy_ics.protocols.base import ProtocolPlugin
-
+from guppy_ics.protocols.mac_helper import is_valid_mac
 
 class ArpPlugin(ProtocolPlugin):
     """
@@ -33,14 +33,14 @@ class ArpPlugin(ProtocolPlugin):
             # Link MAC <-> IPv4 identities
             # (identity enrichment only)
             # ----------------------------
-            if arp.psrc and arp.hwsrc:
+            if is_valid_mac(arp.hwsrc) and arp.hwsrc:
                 state.link_identifiers(
                     arp.hwsrc,
                     arp.psrc,
                     reason="arp_observed",
                 )
 
-            if arp.pdst and arp.hwdst:
+            if is_valid_mac(arp.pdst) and arp.hwdst:
                 state.link_identifiers(
                     arp.hwdst,
                     arp.pdst,

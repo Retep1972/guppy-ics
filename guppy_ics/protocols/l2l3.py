@@ -1,5 +1,6 @@
 from __future__ import annotations
 from guppy_ics.protocols.base import ProtocolPlugin
+from guppy_ics.protocols.mac_helper import is_valid_mac
 
 
 class L2L3LinkerPlugin(ProtocolPlugin):
@@ -34,19 +35,17 @@ class L2L3LinkerPlugin(ProtocolPlugin):
             src_ip = ip.src
             dst_ip = ip.dst
 
-            if src_mac and src_ip:
+            if is_valid_mac(src_mac) and src_ip:
                 state.link_identifiers(
                     src_mac,
                     src_ip,
-                    protocol=self.slug,
                     reason="l2_l3_observed",
                 )
 
-            if dst_mac and dst_ip:
+            if is_valid_mac(dst_mac) and dst_ip:
                 state.link_identifiers(
                     dst_mac,
                     dst_ip,
-                    protocol=self.slug,
                     reason="l2_l3_observed",
                 )
 
