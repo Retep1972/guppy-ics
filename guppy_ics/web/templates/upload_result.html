@@ -45,6 +45,13 @@
                     {{ asset.visibility_label }}
                 </span>
             {% endif %}
+            
+            {% if asset.metadata.inference_hints %}
+                {% for hint in asset.metadata.inference_hints %}
+                    <span class="hint-badge">{{ hint.replace('_', ' ') }}</span>
+                {% endfor %}
+            
+            {% endif %}
 
             <br>
 

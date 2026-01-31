@@ -1,20 +1,14 @@
 import uuid
 from typing import Dict, Any, Optional
+from guppy_ics.protocols.mac_helper import is_valid_mac
+
+INVALID_ASSET = "__invalid_asset__"
 
 class AnalysisState:
     """
     Central in-memory state for a Guppy ICS analysis run.
     Protocol plugins write here; persistence happens later.
     """
-
-    def _is_valid_mac(self, mac: str | None) -> bool:
-        if not mac:
-            return False
-        mac = mac.lower()
-        return mac not in {
-            "00:00:00:00:00:00",
-            "ff:ff:ff:ff:ff:ff",
-        }
     
     def __init__(self):
         # asset_id -> asset dict
@@ -49,6 +43,16 @@ class AnalysisState:
         else:
             asset_id = str(uuid.uuid4())
             id_type = self._infer_identifier_type(identifier)
+            # --- HARD REJECTION OF NON-ASSETS ---
+            if id_type == "mac" and not is_valid_mac(identifier):
+                return INVALID_ASSET
+
+            if id_type == "ip" and identifier == "0.0.0.0":
+                return INVALID_ASSET
+
+            if id_type == "ipv6" and identifier.lower().startswith("ff"):
+                return INVALID_ASSET
+
             asset = {
                 "asset_id": asset_id,
                 # primary identifier (legacy-compatible)
@@ -112,6 +116,10 @@ class AnalysisState:
         src_id = self.asset_index.get(src) or self.register_asset(src, protocol=protocol)
         dst_id = self.asset_index.get(dst) or self.register_asset(dst, protocol=protocol)
 
+        # Abort if either endpoint is invalid
+        if src_id == INVALID_ASSET or dst_id == INVALID_ASSET:
+            return
+
         key = (src_id, dst_id, protocol, function)
 
         if key not in self.communications:
@@ -156,6 +164,9 @@ class AnalysisState:
         a_id = self.asset_index.get(a) or self.register_asset(a, protocol=protocol)
         b_id = self.asset_index.get(b) or self.register_asset(b, protocol=protocol)
 
+        if a_id == INVALID_ASSET or b_id == INVALID_ASSET:
+            return a_id if a_id != INVALID_ASSET else b_id
+
         if a_id == b_id:
             return a_id
         
@@ -167,9 +178,9 @@ class AnalysisState:
         # -------------------------------------------------
 
         # Never trust placeholder or broadcast MACs
-        if a_type == "mac" and not self._is_valid_mac(a):
+        if a_type == "mac" and not is_valid_mac(a):
             return a_id
-        if b_type == "mac" and not self._is_valid_mac(b):
+        if b_type == "mac" and not is_valid_mac(b):
             return b_id
 
         # Prevent MACs from absorbing many unrelated IPs
@@ -346,4 +357,34 @@ class AnalysisState:
                 asset["visibility"] = "observed_l2_only"
             else:
                 asset["visibility"] = "inferred"
-    
+
+        # ---- post-processing hints (UX only) ----
+        self.add_inference_hints()
+
+
+    def add_inference_hints(self) -> None:
+        """
+        Add lightweight, non-authoritative inference hints.
+        UX only. Never affects logic.
+        """
+
+        for asset in self.assets.values():
+            hints = set()
+
+            ids = asset.get("identifiers", {})
+            macs = ids.get("mac", set())
+            ips = ids.get("ip", set())
+            ipv6s = ids.get("ipv6", set())
+
+            # Likely VM
+            if len(macs) > 1:
+                hints.add("likely_vm")
+
+            # Multi-interface / multi-stack
+            if len(ips) > 1 or len(ipv6s) > 1:
+                hints.add("multi_interface")
+
+            if hints:
+                asset.setdefault("metadata", {})["inference_hints"] = sorted(hints)
+                print("HINTS:", asset.get("identifier"), sorted(hints))
+

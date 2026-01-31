@@ -26,29 +26,48 @@ class IPv6DetectionPlugin(ProtocolPlugin):
             src_ipv6 = ip6.src
             dst_ipv6 = ip6.dst
 
+            # ---------------------------------------------
+            # Helper: IPv6 multicast detection
+            # ---------------------------------------------
+            def is_ipv6_multicast(addr: str | None) -> bool:
+                return bool(addr) and addr.lower().startswith("ff")
+
+            # Drop IPv6 multicast addresses early
+            if is_ipv6_multicast(src_ipv6):
+                src_ipv6 = None
+
+            if is_ipv6_multicast(dst_ipv6):
+                dst_ipv6 = None
+
             src_asset_id = None
             dst_asset_id = None
 
             # -------------------------------------------------
             # Link IPv6 addresses to existing assets via MAC
-            # (identity enrichment only)
+            # (identity enrichment only, unicast only)
             # -------------------------------------------------
-            if hasattr(packet, "src") and ":" in str(packet.src):
+            if (
+                src_ipv6
+                and hasattr(packet, "src")
+            ):
                 src_asset_id = state.link_identifiers(
-                    packet.src,           # MAC
-                    src_ipv6,              # IPv6
+                    packet.src,      # MAC (state will validate)
+                    src_ipv6,        # IPv6 (unicast only)
                     reason="ipv6_observed",
                 )
 
-            if hasattr(packet, "dst") and ":" in str(packet.dst):
+            if (
+                dst_ipv6
+                and hasattr(packet, "dst")
+            ):
                 dst_asset_id = state.link_identifiers(
-                    packet.dst,           # MAC
-                    dst_ipv6,              # IPv6
+                    packet.dst,      # MAC (state will validate)
+                    dst_ipv6,        # IPv6 (unicast only)
                     reason="ipv6_observed",
                 )
 
             # -------------------------------------------------
-            # Register informational event
+            # Register informational event (always allowed)
             # -------------------------------------------------
             state.register_event(
                 protocol="ipv6",
