@@ -181,6 +181,31 @@ pre {
     border-color: #66ffaa;
 }
 
+.badge-snmp {
+    background: #607d8b;
+}
+
+.badge-green { background: #4caf50; }
+.badge-blue  { background: #2196f3; }
+.badge-gray  { background: #9e9e9e; }
+
+.legend {
+    margin-bottom: 1em;
+    padding: 0.5em 0.75em;
+    border-left: 4px solid #ccc;
+    font-size: 0.9em;
+}
+
+.legend-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0.5em 0 0 0;
+}
+
+.legend-list li {
+    margin: 0.25em 0;
+}
+
 /* ---- Topology tree ---- */
 
 .topology-tree {

@@ -21,7 +21,7 @@ class ModbusPlugin(ProtocolPlugin):
 
     def process(self, packet, state) -> None:
         try:
-            # Must be IP + TCP for Modbus
+            # Modbus TCP must be IP + TCP
             if not packet.haslayer("IP") or not packet.haslayer("TCP"):
                 return
 
@@ -31,7 +31,10 @@ class ModbusPlugin(ProtocolPlugin):
             src_ip = ip.src
             dst_ip = ip.dst
 
-            # Link L2 <-> L3 identities FIRST
+            # ----------------------------
+            # Link L2 <-> L3 identities
+            # (does NOT imply L3 visibility)
+            # ----------------------------
             if hasattr(packet, "src") and ":" in str(packet.src):
                 state.link_identifiers(
                     packet.src,
@@ -48,16 +51,38 @@ class ModbusPlugin(ProtocolPlugin):
                     reason="l2_l3_observed",
                 )
 
-            # Heuristic roles
+            # ----------------------------
+            # Client / Server roles
+            # ----------------------------
             if tcp.dport == 502:
-                state.register_asset(src_ip, role="client", protocol=self.slug)
-                state.register_asset(dst_ip, role="plc", protocol=self.slug)
+                client_ip = src_ip
+                server_ip = dst_ip
                 direction = "request"
             else:
-                state.register_asset(src_ip, role="plc", protocol=self.slug)
-                state.register_asset(dst_ip, role="client", protocol=self.slug)
+                client_ip = dst_ip
+                server_ip = src_ip
                 direction = "response"
 
+            # ----------------------------
+            # Register assets (L3 evidence)
+            # ----------------------------
+            state.register_asset(
+                client_ip,
+                role="client",
+                protocol=self.slug,
+                evidence_layer="l3",
+            )
+
+            state.register_asset(
+                server_ip,
+                role="plc",
+                protocol=self.slug,
+                evidence_layer="l3",
+            )
+
+            # ----------------------------
+            # Register communication
+            # ----------------------------
             state.register_communication(
                 src=src_ip,
                 dst=dst_ip,
@@ -69,6 +94,6 @@ class ModbusPlugin(ProtocolPlugin):
                 },
             )
 
-        except Exception as e:
+        except Exception:
+            # Never break analysis on malformed packets
             return
-

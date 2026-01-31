@@ -6,7 +6,13 @@
 
 <p>
 This page explains how to interpret the results shown after uploading a PCAP file.
-All analysis is <strong>passive</strong> and based only on observed network traffic.
+All analysis is <strong>passive</strong> and based only on <strong>observed network traffic</strong>
+at the capture point.
+</p>
+
+<p class="muted">
+Guppy ICS does not perform active scanning, probing, or fingerprinting.
+Devices and communications not visible in the capture will not appear in the results.
 </p>
 
 <hr>
@@ -22,69 +28,145 @@ and <strong>events</strong> were discovered during analysis.
 <h3>🧩 Assets</h3>
 <p>
 Assets represent discovered devices in the network.
-A single asset may combine multiple identifiers (MAC, IP).
+A single asset may combine multiple identifiers (for example: MAC and IP address)
+when identity linkage is observed.
 </p>
 
 <ul>
-    <li><strong>Label</strong>: Best available identifier (name, IP, or MAC)</li>
-    <li><strong>Role</strong>: Inferred function (PLC, IO device, client, server)</li>
-    <li><strong>Protocols</strong>: Protocols the asset participates in</li>
+    <li><strong>Label</strong>: Best available identifier (station name, IP address, or MAC)</li>
+    <li><strong>Role</strong>: Inferred function (PLC, IO device, HMI, client, server)</li>
+    <li><strong>Protocols</strong>: Industrial or management protocols the asset participates in</li>
+    <li><strong>Visibility</strong>: How confidently the asset was observed (see below)</li>
 </ul>
+
+<h4>Asset Visibility</h4>
+<ul>
+    <li>
+        <strong>Observed (IP)</strong> –
+        The device was directly observed communicating at the IP layer (TCP or UDP).
+    </li>
+    <li>
+        <strong>Observed (L2 only)</strong> –
+        The device was directly observed at Ethernet level (for example PROFINET IO),
+        but no IP traffic was seen.
+    </li>
+    <li>
+        <strong>Inferred</strong> –
+        The device was not directly observed communicating, but inferred from
+        identity relationships or network structure.
+    </li>
+</ul>
+
+<p class="muted">
+“Inferred” does not mean guessed or simulated – it indicates limited visibility
+from the capture location.
+</p>
 
 <hr>
 
 <h3>🔁 Communications</h3>
 <p>
 Communications describe how assets interact.
-Each entry represents a <em>semantic communication relationship</em>, not individual packets.
+Each entry represents a <em>semantic communication relationship</em>,
+not individual packets.
 </p>
 
 <ul>
-    <li><strong>Protocol badge</strong>: Application or transport protocol</li>
-    <li><strong>Function</strong>: What the traffic represents (controls, client → server, L4)</li>
+    <li><strong>Protocol badge</strong>: Detected application protocol (e.g. S7, Modbus, OPC UA, SNMP, DNP3)</li>
+    <li><strong>Function</strong>: Meaning of the traffic (client → server, controls, response, trap)</li>
     <li><strong>Direction</strong>: Source → Destination</li>
-    <li><strong>Ports</strong>: Shown when relevant (firewall design)</li>
+    <li><strong>IP and Ports</strong>: Shown when IP-based communication was observed</li>
 </ul>
 
-<h4>OSI Layer Indicators</h4>
+<p class="muted">
+For Layer-2-only protocols (such as PROFINET IO), no IP addresses or ports are shown,
+because they do not exist on the wire.
+</p>
+
+<hr>
+
+<h4>Transport and OSI Layers</h4>
 <ul>
+    <li><strong>L2</strong>: Ethernet-based industrial traffic (e.g. PROFINET RT)</li>
     <li><strong>L3</strong>: Network layer (IP)</li>
-    <li><strong>L4</strong>: Transport layer (TCP/UDP, application unknown)</li>
+    <li><strong>L4</strong>: Transport layer (TCP or UDP)</li>
 </ul>
+
+<p class="muted">
+Guppy ICS prefers application-level protocols over raw transport information
+to reduce noise and improve clarity.
+</p>
 
 <hr>
 
 <h3>🗺️ Topology</h3>
 <p>
-The topology section provides a logical view of the network based on observed communications.
+The topology section provides a logical view of the network based on
+observed communications.
 </p>
 
 <ul>
-    <li>Each root node is a source asset</li>
-    <li>Indented entries show outgoing communications</li>
-    <li>Only the highest meaningful protocol is shown</li>
+    <li>Each root node represents a source asset</li>
+    <li>Indented entries show outgoing communication relationships</li>
+    <li>Only the highest meaningful protocol is shown per relationship</li>
 </ul>
+
+<p class="muted">
+The topology reflects observed communication paths, not physical cabling
+or switch-level topology.
+</p>
 
 <hr>
 
 <h3>⚠️ Events</h3>
 <p>
 Events highlight notable protocol-level observations when supported by a protocol.
+Examples include:
+</p>
+
+<ul>
+    <li>Detection of insecure SNMP versions (v1 / v2c)</li>
+    <li>Notable management or control behaviors</li>
+</ul>
+
+<p class="muted">
 Not all protocols generate events.
+Absence of events does not imply absence of risk.
+</p>
+
+<hr>
+
+<h3>📄 Firewall Rule Export (CSV)</h3>
+<p>
+Guppy ICS can generate firewall rules based on observed IP-based communications.
+</p>
+
+<ul>
+    <li>Includes both <strong>TCP</strong> and <strong>UDP</strong> traffic</li>
+    <li>Only includes assets directly <strong>observed at IP level</strong></li>
+    <li>Uses observed source/destination IPs and ports</li>
+    <li>Excludes Layer-2-only protocols and inferred assets</li>
+</ul>
+
+<p class="muted">
+The firewall CSV represents what was observed in the PCAP.
+It does not include assumed, inferred, or unseen communication paths.
+Always validate rules in a test environment before deployment.
 </p>
 
 <hr>
 
 <h3>🔐 Intended Use</h3>
 <ul>
-    <li>Understand ICS system topology</li>
-    <li>Review control vs management traffic</li>
-    <li>Design host-based and network firewall rules</li>
-    <li>Document brownfield OT environments</li>
+    <li>Gain situational awareness of ICS and OT networks</li>
+    <li>Understand control, monitoring, and management traffic</li>
+    <li>Support firewall and segmentation design</li>
+    <li>Document brownfield industrial environments</li>
 </ul>
 
 <p class="muted">
-Guppy ICS does not actively probe or modify the network.
+Guppy ICS is designed to assist analysis and decision-making.
+It does not replace engineering validation or safety review.
 </p>
 
 {% endblock %}

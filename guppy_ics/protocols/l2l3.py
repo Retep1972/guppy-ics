@@ -6,6 +6,10 @@ class L2L3LinkerPlugin(ProtocolPlugin):
     """
     Infrastructure plugin:
     Links MAC <-> IP for ANY Ethernet+IP packet.
+
+    This plugin provides identity evidence ONLY.
+    It must not create protocol-level communications
+    or influence visibility directly.
     """
     name = "L2/L3 Identity Linker"
     slug = "l2l3"
@@ -13,7 +17,11 @@ class L2L3LinkerPlugin(ProtocolPlugin):
 
     def match(self, packet) -> bool:
         try:
-            return packet.haslayer("IP") and hasattr(packet, "src") and hasattr(packet, "dst")
+            return (
+                packet.haslayer("IP")
+                and hasattr(packet, "src")
+                and hasattr(packet, "dst")
+            )
         except Exception:
             return False
 
@@ -42,13 +50,8 @@ class L2L3LinkerPlugin(ProtocolPlugin):
                     reason="l2_l3_observed",
                 )
 
-            state.register_communication(
-                src=src_ip,
-                dst=dst_ip,
-                protocol="ip",
-                function="l3",
-            )
+            # Do NOT register communications here
+            # Identity linking only
 
         except Exception:
             return
-

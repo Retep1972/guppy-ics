@@ -183,11 +183,22 @@ def filter_communications_for_ui(communications):
                     selected = c
                     break
 
-        # 3️⃣ Never show pure IP
-        if selected:
-            filtered.append(selected)
+        if not selected:
+            continue
+
+        # ----------------------------
+        # Presentation enrichment
+        # ----------------------------
+        meta = selected.get("metadata", {})
+        if meta.get("dst_port") and selected.get("dst_ip"):
+            selected["dst_display"] = f"{selected['dst_label']} ({selected['dst_ip']})"
+        else:
+            selected["dst_display"] = selected.get("dst_label")
+
+        filtered.append(selected)
 
     return filtered
+
 
 def build_topology_from_communications(communications, state):
     """
@@ -304,7 +315,7 @@ def upload_result(request: Request, bus_id: str):
 
         # Then IPv6 (explicitly marked!)
         if ipv6s:
-            print(ipv6s)
+            #print(ipv6s)
             return f"{label} (IPV6: {sorted(ipv6s)[0]})"
 
         # Finally MAC
@@ -364,6 +375,19 @@ def upload_result(request: Request, bus_id: str):
     # -------------------------
     # Render
     # -------------------------
+
+    VISIBILITY_LABELS = {
+        "observed_l3": ("Observed (IP)", "green"),
+        "observed_l2_only": ("Observed (L2 only)", "blue"),
+        "inferred": ("Inferred", "gray"),
+    }
+
+    for a in assets:
+        vis = a.get("visibility", "inferred")
+        label, color = VISIBILITY_LABELS.get(vis, ("Unknown", "gray"))
+        a["visibility_label"] = label
+        a["visibility_color"] = color
+
     return templates.TemplateResponse(
         "upload_result.html",
         {
@@ -429,10 +453,6 @@ def export_firewall_csv(bus_id: str):
     rows_by_host = {}
 
     for comm in state.communications.values():
-        proto = comm.get("protocol")
-        if proto not in ("tcp", "udp"):
-            continue
-
         meta = comm.get("metadata", {})
         src_port = meta.get("src_port")
         dst_port = meta.get("dst_port")
@@ -441,12 +461,23 @@ def export_firewall_csv(bus_id: str):
 
         src_asset = state.assets.get(comm["src_asset_id"])
         dst_asset = state.assets.get(comm["dst_asset_id"])
-        # Skip broadcast endpoints entirely
+
+        # Only export rules for assets directly observed at L3
+        if (
+            not src_asset
+            or not dst_asset
+            or src_asset.get("visibility") != "observed_l3"
+            or dst_asset.get("visibility") != "observed_l3"
+        ):
+            continue
+
+        # Skip broadcast endpoints
         if (
             is_broadcast_identifier(src_asset.get("identifier") if src_asset else None)
             or is_broadcast_identifier(dst_asset.get("identifier") if dst_asset else None)
         ):
             continue
+
         src_ip = first_ip(src_asset)
         dst_ip = first_ip(dst_asset)
         if not src_ip or not dst_ip:
@@ -455,29 +486,32 @@ def export_firewall_csv(bus_id: str):
         src_label = asset_label(src_asset) or src_ip
         dst_label = asset_label(dst_asset) or dst_ip
 
-        # Outbound rule (from source host perspective)
+        transport_proto = meta.get("transport", "tcp")
+
+        # Outbound rule
         rows_by_host.setdefault(src_ip, []).append([
             src_label,
             src_ip,
             dst_label,
             dst_ip,
-            proto,
+            transport_proto,
             src_port,
             dst_port,
             "outbound",
         ])
 
-        # Inbound rule (from destination host perspective)
+        # Inbound rule
         rows_by_host.setdefault(dst_ip, []).append([
             dst_label,
             dst_ip,
             src_label,
             src_ip,
-            proto,
+            transport_proto,
             src_port,
             dst_port,
             "inbound",
         ])
+
 
     output = StringIO()
     writer = csv.writer(output)

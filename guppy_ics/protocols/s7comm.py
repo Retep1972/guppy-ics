@@ -38,7 +38,20 @@ class S7CommPlugin(ProtocolPlugin):
 
             state.register_asset(plc, role="plc", protocol=self.slug)
             state.register_asset(client, role="engineering_station", protocol=self.slug)
+            state.register_asset(
+                plc,
+                role="plc",
+                protocol=self.slug,
+                evidence_layer="l3"
+            )
 
+            state.register_asset(
+                client,
+                role="engineering_station",
+                protocol=self.slug,
+                evidence_layer="l3"
+            )
+            
             state.register_communication(
                 src=src_ip,
                 dst=dst_ip,

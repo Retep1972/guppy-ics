@@ -19,7 +19,7 @@ class LiveInterfaceSource(PacketSource):
         self.timeout = timeout
 
     def packets(self) -> Iterable[object]:
-        print("[DEBUG] packets() entered:", self.interface, self.bpf_filter)
+        #print("[DEBUG] packets() entered:", self.interface, self.bpf_filter)
         """
         Passive streaming sniffing.
         - Runs scapy.sniff() in a background thread (sniff() blocks).

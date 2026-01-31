@@ -10,14 +10,39 @@
     <pre>{{ summary }}</pre>
 
     <h3>Assets</h3>
+        <div class="legend">
+        <strong>Asset visibility:</strong>
+        <ul class="legend-list">
+            <li>
+                <span class="badge badge-green">Observed (IP)</span>
+                Device was directly observed communicating at IP level
+            </li>
+            <li>
+                <span class="badge badge-blue">Observed (L2 only)</span>
+                Device was directly observed at Ethernet level (e.g. PROFINET), no IP traffic seen
+            </li>
+            <li>
+                <span class="badge badge-gray">Inferred</span>
+                Device was not directly observed, but inferred from network structure or identity links
+            </li>
+        </ul>
+    </div>
     <ul class="asset-list">
     {% for asset in assets %}
         <li class="asset-item">
             <strong>{{ asset.label }}</strong>
 
+            {# --- ROLE BADGE --- #}
             {% if asset.role %}
                 <span class="badge badge-role badge-role-{{ asset.role }}">
                     {{ asset.role }}
+                </span>
+            {% endif %}
+
+            {# --- VISIBILITY BADGE (NEW) --- #}
+            {% if asset.visibility_label %}
+                <span class="badge badge-{{ asset.visibility_color }}">
+                    {{ asset.visibility_label }}
                 </span>
             {% endif %}
 
@@ -41,7 +66,6 @@
     {% endfor %}
     </ul>
 
-
     <h3>Communications</h3>
     <ul class="comm-list">
     {% for comm in communications %}
@@ -55,13 +79,27 @@
                     {{ comm.function }}
                 </span>
             {% endif %}
+            
+            {% if comm.metadata and comm.metadata.snmp_version %}
+                <span class="badge badge-snmp">
+                    SNMP {{ comm.metadata.snmp_version | upper }}
+                </span>
+            {% endif %}
 
             <br>
-            {{ comm.src_label }} → {{ comm.dst_label }}
-
-            {% if comm.metadata and comm.metadata.dst_port is defined %}
+            {{ comm.src_label }}
+            {% if comm.metadata and comm.metadata.src_port is defined and comm.src_ip %}
                 <span class="muted">
-                    (port {{ comm.metadata.dst_port }})
+                    (IP: {{ comm.src_ip }} | port: {{ comm.metadata.src_port }})
+                </span>
+            {% endif %} 
+            
+            → 
+            
+            {{ comm.dst_display or comm.dst_label }}
+            {% if comm.metadata and comm.metadata.dst_port is defined and comm.dst_ip %}
+                <span class="muted">
+                    (IP: {{ comm.dst_ip }} | port: {{ comm.metadata.dst_port }})
                 </span>
             {% endif %}
         </li>
@@ -91,9 +129,9 @@
         <a href="/upload">⬅ Upload another PCAP</a>
     </p>
     <p>
-    <a href="/upload/firewall.csv?bus_id={{ request.query_params.bus_id }}">
-        ⬇ Download firewall rules (CSV)
-    </a>
-</p>
+        <a href="/upload/firewall.csv?bus_id={{ request.query_params.bus_id }}">
+            ⬇ Download firewall rules (CSV)
+        </a>
+    </p>
 </body>
 {% endblock %}

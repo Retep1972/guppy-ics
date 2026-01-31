@@ -12,7 +12,8 @@ from guppy_ics.protocols.s7comm import S7CommPlugin
 from guppy_ics.protocols.opcua import OPCUAPlugin
 from guppy_ics.protocols.iec104 import IEC104Plugin
 from guppy_ics.protocols.ipv6 import IPv6DetectionPlugin
-
+from guppy_ics.protocols.snmp import SNMPPlugin
+from guppy_ics.protocols.dnp3 import DNP3Plugin
 
 def _all_plugins() -> List[ProtocolPlugin]:
     """
@@ -29,6 +30,8 @@ def _all_plugins() -> List[ProtocolPlugin]:
         S7CommPlugin(),
         OPCUAPlugin(),
         IEC104Plugin(),
+        DNP3Plugin(),
+        SNMPPlugin(),
     ]
 
 

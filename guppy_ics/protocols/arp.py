@@ -4,6 +4,14 @@ from guppy_ics.protocols.base import ProtocolPlugin
 
 
 class ArpPlugin(ProtocolPlugin):
+    """
+    Infrastructure plugin:
+    Uses ARP to link MAC <-> IPv4 identities.
+
+    ARP provides identity evidence only.
+    It must not imply application protocols,
+    visibility, or communications.
+    """
     name = "ARP"
     slug = "arp"
     safe_by_default = True
@@ -21,15 +29,14 @@ class ArpPlugin(ProtocolPlugin):
 
             arp = packet["ARP"]
 
-            # Optional debug
-            # print("ARP:", arp.psrc, arp.hwsrc)
-
-            # Link MAC <-> IP
+            # ----------------------------
+            # Link MAC <-> IPv4 identities
+            # (identity enrichment only)
+            # ----------------------------
             if arp.psrc and arp.hwsrc:
                 state.link_identifiers(
                     arp.hwsrc,
                     arp.psrc,
-                    protocol=self.slug,
                     reason="arp_observed",
                 )
 
@@ -37,10 +44,9 @@ class ArpPlugin(ProtocolPlugin):
                 state.link_identifiers(
                     arp.hwdst,
                     arp.pdst,
-                    protocol=self.slug,
                     reason="arp_observed",
                 )
 
         except Exception:
+            # Never break analysis on malformed frames
             return
-

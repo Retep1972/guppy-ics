@@ -78,8 +78,16 @@ class ProfinetPlugin(ProtocolPlugin):
             # -------------------------------------------------
             # RTC1 cyclic IO
             if 0x8000 <= frame_id <= 0xBFFF:
-                state.register_asset(packet.src, protocol=self.slug)
-                state.register_asset(packet.dst, protocol=self.slug)
+                state.register_asset(
+                    packet.src,
+                    protocol=self.slug,
+                    evidence_layer="l2"
+                )
+                state.register_asset(
+                    packet.dst,
+                    protocol=self.slug,
+                    evidence_layer="l2"
+                )
 
                 state.register_communication(
                     src=packet.src,
@@ -89,6 +97,7 @@ class ProfinetPlugin(ProtocolPlugin):
                     metadata={"frame_id": hex(frame_id)},
                 )
                 return
+
 
             # -----------------------------------------
             # DCP Identify / Set (0xFEFE / 0xFEFD)
@@ -132,14 +141,14 @@ class ProfinetPlugin(ProtocolPlugin):
 
             state.register_asset(
                 src_id,
-                role="profinet_device",
                 protocol=self.slug,
                 metadata=metadata if metadata else None,
+                evidence_layer="l2"
             )
             state.register_asset(
                 dst_id,
-                role="profinet_device",
                 protocol=self.slug,
+                evidence_layer="l2"
             )
 
             state.register_communication(

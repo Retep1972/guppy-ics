@@ -33,6 +33,7 @@ class AnalysisState:
         protocol: Optional[str] = None,
         vendor: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        evidence_layer: Optional[str] = None,
     ) -> str:
         if identifier in self.asset_index:
             asset_id = self.asset_index[identifier]
@@ -53,6 +54,8 @@ class AnalysisState:
                 "vendor": None,
                 "protocols": set(),
                 "metadata": {},
+                "_evidence_layers": set(),   # {"l2"}, {"l3"}
+                "visibility": None,
             }
             self.assets[asset_id] = asset
             self.asset_index[identifier] = asset_id
@@ -79,6 +82,9 @@ class AnalysisState:
 
         if metadata:
             asset["metadata"].update(metadata)
+        
+        if evidence_layer in ("l2", "l3"):
+            asset.setdefault("_evidence_layers", set()).add(evidence_layer)
 
         return asset_id
 
@@ -186,6 +192,11 @@ class AnalysisState:
         # Merge metadata
         keep["metadata"].update(drop.get("metadata", {}))
 
+        # ✅ Merge evidence layers ONCE (and always)
+        keep.setdefault("_evidence_layers", set()).update(
+            drop.get("_evidence_layers", set())
+        )
+
         # Preserve role/vendor if already set
         if not keep.get("role") and drop.get("role"):
             keep["role"] = drop["role"]
@@ -216,6 +227,7 @@ class AnalysisState:
 
         del self.assets[drop_id]
         return keep_id
+
 
     # -------------------------
     # Events (optional)
@@ -264,7 +276,7 @@ class AnalysisState:
 
         return "unknown"
 
-    def infer_profinet_roles(self) -> None:
+    def infer_profinet_roles(self) -> None: # dead code, remove after testing
         """
         Infer PROFINET controller / device roles from RTC1 traffic.
         """
@@ -293,3 +305,15 @@ class AnalysisState:
                 asset["role"] = asset.get("role") or "profinet_controller"
             elif in_c > out_c:
                 asset["role"] = asset.get("role") or "profinet_device"
+
+    def finalize_asset_visibility(self) -> None:
+        for asset in self.assets.values():
+            layers = asset.get("_evidence_layers", set())
+
+            if "l3" in layers:
+                asset["visibility"] = "observed_l3"
+            elif "l2" in layers:
+                asset["visibility"] = "observed_l2_only"
+            else:
+                asset["visibility"] = "inferred"
+    

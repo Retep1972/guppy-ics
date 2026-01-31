@@ -54,5 +54,7 @@ def analyze_source(
     if progress_cb:
         progress_cb(packet_count)
 
-    state.infer_profinet_roles()
+    state.finalize_asset_visibility()
+    #for a in state.assets.values():
+        #print(a["identifiers"], a["visibility"], a["protocols"])
     return state
