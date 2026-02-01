@@ -189,16 +189,27 @@ guppy replay capture.pcap --only topology
 
 ## Live Monitoring Mode
 
-Live mode performs passive network monitoring on a network interface and
-periodically renders results.
+Live mode performs **continuous, passive monitoring** of a network interface.
+Results update incrementally as traffic is observed and are rendered at a
+configurable interval.
 
-**Warning:** Live capture requires packet capture privileges.
+Live mode uses the **same analysis pipeline** as PCAP replay and the Web UI,
+ensuring consistent results across all interfaces.
+
+**Important notes:**
+- Live mode is designed for *situational awareness*, not deep packet inspection.
+- Background IT noise (multicast, IPv6 chatter, broadcast traffic) is filtered
+  automatically.
+- Only assets with meaningful, observed behavior are shown by default.
+
+**Warning:** Live capture requires packet capture privileges
+(root / Administrator).
 
 ### Live assets
 
 ```bash
 guppy live assets --iface eth0
-```
+
 
 Shows discovered devices, identifiers, roles, vendors, and protocols.
 
@@ -221,19 +232,16 @@ Shows a logical, protocol-aware topology derived from observed traffic.
 
 ### Common live options
 
-```text
 --protocol <name>     Limit analysis to specific protocols (repeatable)
 --bpf <filter>        Berkeley Packet Filter applied at capture time
 --interval <seconds>  Refresh interval (default: 5)
 --once                Render a single snapshot and exit
 --out <file>          Write output to a file
-```
+
 
 Example:
 
-```bash
 guppy live topology --iface eth0 --protocol profinet --interval 10 --out topology.txt
-```
 
 ---
 
@@ -282,11 +290,18 @@ The CSV can be:
 
 ## Notes and Limitations
 
-- Guppy performs **passive analysis only**
-- No packets are sent into the network
-- Topology is logical, not physical cabling
-- Firewall output represents observed intent, not enforcement policy
-- Windows live capture depends on capture backend support
+# Notes and Limitations
+
+- Guppy performs **passive analysis only** — it never sends packets into the network.
+- Asset discovery is **best-effort inference** based on observed traffic.
+- Background IT noise (multicast, IPv6 discovery, broadcast traffic) is filtered
+  to keep output focused on ICS-relevant devices.
+- Topology is logical and protocol-aware, not a physical wiring diagram.
+- Firewall output reflects **observed communication intent**, not a complete
+  security policy.
+- Live capture reliability depends on OS capture backend support
+  (libpcap / Npcap).
+- On Windows, live capture requires a compatible Npcap installation.
 
 ---
 
