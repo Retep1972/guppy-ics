@@ -57,13 +57,14 @@ def _start_browser():
 
 
 def _start_cli(args):
+    from guppy_ics.cli.guppy import main as cli_main
+
     print("\nStarting Guppy ICS CLI...\n")
 
-    # If no args were provided (menu selection), show CLI help
+    # If launched from menu with no args, show help
     if not args:
         args = ["--help"]
 
-    subprocess.run(
-        [sys.executable, "-m", "guppy_ics.cli.guppy"] + args,
-        check=False,
-    )
+    cli_main(args)
+
+

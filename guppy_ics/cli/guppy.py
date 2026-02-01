@@ -1,6 +1,6 @@
 from __future__ import annotations
-
-import argparse, time, os, signal
+from scapy.all import conf
+import argparse, time, os, signal, logging
 import json, csv
 from dataclasses import is_dataclass, asdict
 from pathlib import Path
@@ -8,10 +8,20 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from guppy_ics.analysis.run import analyze_pcap, analyze_source
 from guppy_ics.core.sources.live import LiveInterfaceSource
+from guppy_ics.protocols.registry import load_plugins
+from guppy_ics.core.dispatcher import ProtocolDispatcher
+from guppy_ics.core.state import AnalysisState
 from collections import defaultdict
 
 TRANSPORT_PROTOCOLS = {"ip", "ipv4", "ipv6", "tcp", "udp"}
 BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
+
+# Silence Scapy warnings
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+logging.getLogger("scapy.loading").setLevel(logging.ERROR)
+
+# Disable Scapy verbose socket warnings
+conf.verb = 0
 
 def is_broadcast_identifier(identifier: str | None) -> bool:
     if not identifier:
@@ -21,6 +31,40 @@ def is_broadcast_identifier(identifier: str | None) -> bool:
 # ----------------------------
 # Rendering helpers
 # ----------------------------
+def _asset_is_relevant(asset: Dict[str, Any]) -> bool:
+    """
+    Mirror browser asset filtering:
+    - hide inferred-only noise
+    - hide assets with no protocols
+    """
+    if not asset:
+        return False
+
+    visibility = asset.get("visibility")
+    protocols = asset.get("protocols", [])
+
+    if visibility == "inferred" and not protocols:
+        return False
+
+    return True
+
+def primary_label(asset: Dict[str, Any]) -> str:
+    metadata = asset.get("metadata", {})
+    station = metadata.get("station_name")
+    if station:
+        return station
+
+    ids = asset.get("identifiers", {})
+    macs = ids.get("mac")
+    if macs:
+        return sorted(macs)[0]
+
+    ips = ids.get("ip")
+    if ips:
+        return sorted(ips)[0]
+
+    return asset.get("identifier", asset.get("asset_id", "-"))
+
 def filter_communications_for_ui(communications: List[dict]) -> List[dict]:
     """
     Collapse protocol stacks for UI presentation.
@@ -125,7 +169,7 @@ def _asset_label_by_id(state: Any) -> Dict[str, str]:
     mapping = {}
     for a in assets:
         aid = a.get("asset_id")
-        ident = a.get("identifier") or aid or "-"
+        ident = primary_label(a)
         if aid:
             mapping[str(aid)] = str(ident)
     return mapping
@@ -174,7 +218,7 @@ def _extract_assets(state: Any) -> List[Dict[str, Any]]:
     out = []
     for a in vals:
         a = _to_plain(a)
-        if isinstance(a, dict):
+        if isinstance(a, dict) and _asset_is_relevant(a):
             out.append(a)
     # stable sort by identifier if present
     out.sort(key=lambda x: str(x.get("identifier", "")))
@@ -227,8 +271,18 @@ def render_report_text(state: Any, only: str = "all") -> str:
                 role = str(a.get("role", "-") or "-")
                 vendor = str(a.get("vendor", "-") or "-")
             prots = a.get("protocols", []) or []
-            rows.append([ident, itype, role, vendor, _badge_list(prots)])
-        parts.append(_table(rows, headers=["Identifier", "Type", "Role", "Vendor", "Protocols"]))
+            hints = a.get("metadata", {}).get("inference_hints", [])
+            hint_str = ", ".join(hints) if hints else "-"
+
+            rows.append([
+                ident,
+                itype,
+                role,
+                vendor,
+                f"{_badge_list(prots)} {f'[{hint_str}]' if hints else ''}".strip()
+            ])
+
+        parts.append(_table(rows, headers=["Identifier", "Type", "Role", "Vendor", "Visibility / Protocols"]))
         parts.append("")
 
     if only in ("all", "comms"):
@@ -347,18 +401,29 @@ def cmd_replay(args) -> int:
     return 0
 
 def cmd_firewall_csv(args) -> int:
-    state = analyze_pcap(
+    import subprocess, sys
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "guppy_ics.cli.guppy",  
+        "firewall",
+        "csv",
         args.pcap,
-        enabled_protocols=args.protocol,
-        limit=args.limit,
-    )
+        "--out",
+        args.out,
+    ]
 
-    rules = generate_firewall_rules(state)
-    write_firewall_csv(rules, args.out)
+    if args.protocol:
+        for p in args.protocol:
+            cmd.extend(["--protocol", p])
 
-    print(f"[+] Generated {len(rules)} firewall rules")
-    print(f"[+] Output written to {args.out}")
+    if args.limit:
+        cmd.extend(["--limit", str(args.limit)])
+
+    subprocess.run(cmd, check=True)
     return 0
+
 
 def cmd_live_assets(args):
     def render(state):
@@ -523,43 +588,58 @@ def _clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
 
 def run_live(args, render_fn):
+
     source = LiveInterfaceSource(
         interface=args.iface,
         bpf_filter=args.bpf,
         packet_limit=None,
-        timeout=None,
+        timeout=1,
     )
+
     enabled = args.protocol if args.protocol else None
 
-    state = analyze_source(
-        source,
-        enabled_protocols=enabled,
-    )
+    plugins = load_plugins(enabled=enabled)
+    dispatcher = ProtocolDispatcher(plugins)
+    state = AnalysisState()
+
+    last_render = 0.0
 
     try:
         while True:
-            _clear_screen()
-            output = render_fn(state)
+            got_packet = False
 
-            print(output, end="")
+            for pkt in source.packets():
+                got_packet = True
+                dispatcher.dispatch(pkt, state)
 
-            if args.out:
-                with open(args.out, "w", encoding="utf-8") as f:
-                    f.write(output)
+                now = time.time()
+                if now - last_render >= args.interval:
+                    state.finalize_asset_visibility()
 
-            if args.once:
-                break
+                    _clear_screen()
+                    output = render_fn(state)
+                    print(output, end="")
 
-            time.sleep(args.interval)
+                    if args.out:
+                        with open(args.out, "w", encoding="utf-8") as f:
+                            f.write(output)
+
+                    last_render = now
+
+                    if args.once:
+                        return
+
+            # 👇 critical: silence must NOT terminate live mode
+            if not got_packet:
+                time.sleep(0.1)
 
     except KeyboardInterrupt:
         print("\n[+] Live capture stopped.")
 
-def main() -> int:
+def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args.func(args)
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
