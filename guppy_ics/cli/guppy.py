@@ -11,6 +11,8 @@ from guppy_ics.core.sources.live import LiveInterfaceSource
 from guppy_ics.protocols.registry import load_plugins
 from guppy_ics.core.dispatcher import ProtocolDispatcher
 from guppy_ics.core.state import AnalysisState
+from guppy_ics.analysis.run import analyze_live_pcap
+from guppy_ics.sources.live_pcap import LivePCAPSource
 from collections import defaultdict
 
 TRANSPORT_PROTOCOLS = {"ip", "ipv4", "ipv6", "tcp", "udp"}
@@ -470,9 +472,15 @@ def build_parser() -> argparse.ArgumentParser:
         required=True
     )
     def add_live_common(p):
-        p.add_argument("--iface", required=True, help="Network interface to capture from")
+        src = p.add_mutually_exclusive_group(required=True)
+        src.add_argument("--iface", help="Network interface to capture from")
+        src.add_argument("--pcap", help="Replay PCAP as live traffic")
+
+        p.add_argument("--speed", type=float, default=1.0, help="PCAP replay speed (live-pcap only)")
+        p.add_argument("--loop", action="store_true", help="Loop PCAP replay")
+
         p.add_argument("--protocol", action="append", help="Limit analysis to specific protocols")
-        p.add_argument("--bpf", help="Optional BPF capture filter")
+        p.add_argument("--bpf", help="Optional BPF capture filter (iface only)")
         p.add_argument("--interval", type=int, default=5, help="Refresh interval in seconds")
         p.add_argument("--once", action="store_true", help="Render a single snapshot and exit")
         p.add_argument("--out", help="Write output to a file")
@@ -589,12 +597,19 @@ def _clear_screen():
 
 def run_live(args, render_fn):
 
-    source = LiveInterfaceSource(
-        interface=args.iface,
-        bpf_filter=args.bpf,
-        packet_limit=None,
-        timeout=1,
-    )
+    if args.pcap:
+        source = LivePCAPSource(
+            args.pcap,
+            speed=args.speed,
+            loop=args.loop,
+        )
+    else:
+        source = LiveInterfaceSource(
+            interface=args.iface,
+            bpf_filter=args.bpf,
+            packet_limit=None,
+            timeout=1,
+        )
 
     enabled = args.protocol if args.protocol else None
 

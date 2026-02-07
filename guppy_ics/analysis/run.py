@@ -8,6 +8,7 @@ from guppy_ics.protocols.registry import load_plugins
 from guppy_ics.core.sources.base import PacketSource
 from guppy_ics.core.sources.pcap import PcapFileSource
 from guppy_ics.core.control import CancelToken
+from guppy_ics.sources.live_pcap import LivePCAPSource
 
 
 def analyze_pcap(
@@ -58,3 +59,30 @@ def analyze_source(
     #for a in state.assets.values():
         #print(a["identifiers"], a["visibility"], a["protocols"])
     return state
+
+def analyze_live_pcap(
+    path: str,
+    *,
+    enabled_protocols: Optional[list[str]] = None,
+    speed: float = 1.0,
+    loop: bool = False,
+    progress_cb: Optional[Callable[[int], None]] = None,
+    cancel_token: Optional[CancelToken] = None,
+) -> AnalysisState:
+    """
+    Replay a PCAP as a live packet stream (timed).
+    """
+
+    source = LivePCAPSource(
+        path,
+        speed=speed,
+        loop=loop,
+        cancel_token=cancel_token,
+    )
+
+    return analyze_source(
+        source,
+        enabled_protocols=enabled_protocols,
+        progress_cb=progress_cb,
+        cancel_token=cancel_token,
+    )

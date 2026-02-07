@@ -245,6 +245,40 @@ guppy live topology --iface eth0 --protocol profinet --interval 10 --out topolog
 
 ---
 
+### Live PCAP Simulation Mode (Testing / Demo)
+
+Guppy ICS also supports replaying a PCAP file **as if it were live network traffic**.
+This mode is intended for:
+
+- Testing the *live analysis pipeline*
+- Demonstrations and training
+- Development without access to a real ICS network
+- Portable setups (e.g. laptops, Raspberry Pi)
+
+In this mode, packets are read from a PCAP file and injected into the live
+analysis pipeline with their original timing preserved.
+
+> From Guppy’s perspective, this is indistinguishable from real live traffic.
+
+No network interface is required, and no packets are sent onto the wire.
+
+#### Live PCAP assets
+
+guppy live assets --pcap capture.pcap
+guppy live comms --pcap capture.pcap
+guppy live topology --pcap capture.pcap
+
+## Timing control
+
+## Replay speed can be adjusted:
+
+guppy live assets --pcap capture.pcap --speed 0.5   # half speed
+guppy live assets --pcap capture.pcap --speed 2.0   # double speed
+
+## Loop a capture continuously:
+
+guppy live topology --pcap capture.pcap --loop
+
 ## Firewall Rule Generation
 
 Guppy can generate firewall intent directly from observed traffic.
