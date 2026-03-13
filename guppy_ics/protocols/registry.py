@@ -8,6 +8,8 @@ from guppy_ics.protocols.profinet import ProfinetPlugin
 from guppy_ics.protocols.arp import ArpPlugin
 from guppy_ics.protocols.l2l3 import L2L3LinkerPlugin
 from guppy_ics.protocols.transport import TransportPlugin
+from guppy_ics.protocols.tcp import TCPPlugin
+from guppy_ics.protocols.udp import UDPPlugin
 from guppy_ics.protocols.s7comm import S7CommPlugin
 from guppy_ics.protocols.opcua import OPCUAPlugin
 from guppy_ics.protocols.iec104 import IEC104Plugin
@@ -27,6 +29,8 @@ def _all_plugins() -> List[ProtocolPlugin]:
         L2L3LinkerPlugin(),
         IPv6DetectionPlugin(),
         TransportPlugin(),
+        TCPPlugin(),
+        UDPPlugin(),
         S7CommPlugin(),
         OPCUAPlugin(),
         IEC104Plugin(),
@@ -70,4 +74,3 @@ def available_protocols():
         for p in _all_plugins()
         if p.slug not in infrastructure
     ]
-

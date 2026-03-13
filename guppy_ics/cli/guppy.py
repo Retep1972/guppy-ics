@@ -299,7 +299,7 @@ def render_report_text(state: Any, only: str = "all") -> str:
         parts.append("=== Communications ===")
         rows = []
         if not comms:
-            parts.append("(no industrial communications observed)")
+            parts.append("(no communications observed)")
         else:
             for c in comms:
                 proto = str(c.get("protocol", "-"))
@@ -617,7 +617,41 @@ def run_live(args, render_fn):
     dispatcher = ProtocolDispatcher(plugins)
     state = AnalysisState()
 
-    last_render = 0.0
+    last_render = time.time() - float(args.interval)
+    total_packets = 0
+    packets_since_render = 0
+    last_packet_time: Optional[float] = None
+    alive_frames = ("|", "/", "-", "\\")
+    alive_index = 0
+
+    def render_snapshot(now: float) -> None:
+        nonlocal last_render, packets_since_render, alive_index
+
+        state.finalize_asset_visibility()
+
+        _clear_screen()
+        output = render_fn(state)
+        print(output, end="")
+
+        idle_for = "never"
+        if last_packet_time is not None:
+            idle_for = f"{int(max(0, now - last_packet_time))}s ago"
+
+        frame = alive_frames[alive_index % len(alive_frames)]
+        alive_index += 1
+        print(
+            f"[alive {frame}] {time.strftime('%H:%M:%S')} | "
+            f"packets={total_packets} (+{packets_since_render}) | "
+            f"assets={len(state.assets)} comms={len(state.communications)} | "
+            f"last packet={idle_for}"
+        )
+
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as f:
+                f.write(output)
+
+        last_render = now
+        packets_since_render = 0
 
     try:
         while True:
@@ -625,27 +659,22 @@ def run_live(args, render_fn):
 
             for pkt in source.packets():
                 got_packet = True
+                total_packets += 1
+                packets_since_render += 1
+                last_packet_time = time.time()
                 dispatcher.dispatch(pkt, state)
 
-                now = time.time()
-                if now - last_render >= args.interval:
-                    state.finalize_asset_visibility()
-
-                    _clear_screen()
-                    output = render_fn(state)
-                    print(output, end="")
-
-                    if args.out:
-                        with open(args.out, "w", encoding="utf-8") as f:
-                            f.write(output)
-
-                    last_render = now
-
+                if time.time() - last_render >= args.interval:
+                    render_snapshot(time.time())
                     if args.once:
                         return
 
             # 👇 critical: silence must NOT terminate live mode
             if not got_packet:
+                if time.time() - last_render >= args.interval:
+                    render_snapshot(time.time())
+                    if args.once:
+                        return
                 time.sleep(0.1)
 
     except KeyboardInterrupt:
