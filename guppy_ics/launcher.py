@@ -50,7 +50,7 @@ def _start_browser():
             "--host",
             "127.0.0.1",
             "--port",
-            "8000",
+            "8002",
         ],
         check=False,
     )

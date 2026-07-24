@@ -1,6 +1,7 @@
 from __future__ import annotations
 from scapy.all import conf
 import argparse, time, os, signal, logging
+import urllib.error
 import json, csv
 from dataclasses import is_dataclass, asdict
 from pathlib import Path
@@ -13,6 +14,15 @@ from guppy_ics.core.dispatcher import ProtocolDispatcher
 from guppy_ics.core.state import AnalysisState
 from guppy_ics.analysis.run import analyze_live_pcap
 from guppy_ics.sources.live_pcap import LivePCAPSource
+from guppy_ics.integrations.oads import (
+    OADSClient,
+    attach_oads_profiles,
+    build_observations_payload,
+    debug_payload_preview,
+    guppy_match_key_counts,
+    normalize_oads_assets_payload,
+    oads_match_key_counts,
+)
 from collections import defaultdict
 
 TRANSPORT_PROTOCOLS = {"ip", "ipv4", "ipv6", "tcp", "udp"}
@@ -275,16 +285,25 @@ def render_report_text(state: Any, only: str = "all") -> str:
             prots = a.get("protocols", []) or []
             hints = a.get("metadata", {}).get("inference_hints", [])
             hint_str = ", ".join(hints) if hints else "-"
+            oads_profile = a.get("oads_profile") or {}
+            oads_name = (
+                oads_profile.get("name")
+                or oads_profile.get("hostname")
+                or oads_profile.get("device_type")
+                or oads_profile.get("asset_id")
+                or "-"
+            )
 
             rows.append([
                 ident,
                 itype,
                 role,
                 vendor,
-                f"{_badge_list(prots)} {f'[{hint_str}]' if hints else ''}".strip()
+                f"{_badge_list(prots)} {f'[{hint_str}]' if hints else ''}".strip(),
+                str(oads_name),
             ])
 
-        parts.append(_table(rows, headers=["Identifier", "Type", "Role", "Vendor", "Visibility / Protocols"]))
+        parts.append(_table(rows, headers=["Identifier", "Type", "Role", "Vendor", "Visibility / Protocols", "OADS"]))
         parts.append("")
 
     if only in ("all", "comms"):
@@ -386,6 +405,8 @@ def cmd_replay(args) -> int:
     )
     print()  # end progress line
 
+    maybe_enhance_with_oads(state, capture_id=pcap_path.stem, args=args)
+
     if args.format == "json":
         report = render_report_json(state, only=args.only)
     else:
@@ -454,6 +475,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Only render a specific section")
     replay.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     replay.add_argument("--out", default=None, help="Write report to a file (e.g. report.txt)")
+    replay.add_argument("--oads-enhance", action="store_true",
+                        help="Submit passive observations to OADS and attach matching enriched assets")
+    replay.add_argument("--oads-url", default=None,
+                        help="OADS base URL (or GUPPY_OADS_URL, default http://localhost:8000)")
     replay.set_defaults(func=cmd_replay)
 
     # Old. check if anything breaks
@@ -591,6 +616,53 @@ def generate_firewall_rules(state: Any) -> List[dict]:
         })
 
     return rules
+
+def maybe_enhance_with_oads(state: Any, *, capture_id: str, args: Any) -> None:
+    if not _oads_enabled(args):
+        return
+
+    base_url = args.oads_url or os.environ.get("GUPPY_OADS_URL") or "http://localhost:8000"
+
+    if not base_url:
+        print("WARNING: OADS enhancement requested but GUPPY_OADS_URL/--oads-url is missing")
+        return
+
+    client = OADSClient(base_url=base_url)
+    payload = build_observations_payload(state, capture_id)
+    print(f"[+] OADS: submitting {len(payload.get('observations', []))} passive observation(s) to {base_url}")
+    try:
+        submit_response = client.submit_observations(payload)
+        print("[+] OADS submit response preview:")
+        print(debug_payload_preview(submit_response, max_chars=1500))
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        print(f"WARNING: OADS observation submit failed: {exc}")
+        return
+
+    try:
+        assets_response = client.get_assets()
+        print("[+] OADS assets response preview:")
+        print(debug_payload_preview(assets_response, max_chars=2500))
+        profiles = normalize_oads_assets_payload(assets_response)
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        print(f"WARNING: OADS asset fetch failed: {exc}")
+        return
+
+    matched = attach_oads_profiles(state, profiles)
+    guppy_keys = guppy_match_key_counts(state)
+    oads_keys = oads_match_key_counts(profiles)
+    print(
+        "[+] OADS: "
+        f"fetched {len(profiles)} asset(s), "
+        f"Guppy keys MAC={guppy_keys['mac']} IP={guppy_keys['ip']}, "
+        f"OADS keys MAC={oads_keys['mac']} IP={oads_keys['ip']}, "
+        f"matched {matched} asset(s)"
+    )
+
+def _oads_enabled(args: Any) -> bool:
+    if getattr(args, "oads_enhance", False):
+        return True
+    value = os.environ.get("GUPPY_OADS_ENABLED", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 def _clear_screen():
     os.system("cls" if os.name == "nt" else "clear")

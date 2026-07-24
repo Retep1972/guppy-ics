@@ -9,6 +9,66 @@
     <h2>Summary</h2>
     <pre>{{ summary }}</pre>
 
+    {% if oads_status %}
+        <h2>OADS</h2>
+        <p>
+            {% if oads_status.ok %}
+                <span class="badge badge-green">Enabled</span>
+            {% else %}
+                <span class="badge badge-gray">Warning</span>
+            {% endif %}
+            {{ oads_status.message }}
+        </p>
+        <details class="oads-details">
+            <summary>OADS details</summary>
+            {% set guppy_keys = oads_status.guppy_keys | default({"mac": 0, "ip": 0}) %}
+            {% set oads_keys = oads_status.oads_keys | default({"mac": 0, "ip": 0}) %}
+            <ul class="legend-list">
+                <li>Endpoint: <code>{{ oads_status.base_url | default("") }}</code></li>
+                <li>Observations submitted by Guppy: {{ oads_status.observations | default(0) }}</li>
+                <li>
+                    Submit:
+                    {% if oads_status.submitted %}
+                        OK
+                    {% else %}
+                        failed{% if oads_status.submit_error %}: {{ oads_status.submit_error }}{% endif %}
+                    {% endif %}
+                </li>
+                <li>
+                    Fetch enriched assets:
+                    {% if oads_status.fetched %}
+                        OK, {{ oads_status.fetched_assets }} asset(s)
+                    {% else %}
+                        failed{% if oads_status.fetch_error %}: {{ oads_status.fetch_error }}{% endif %}
+                    {% endif %}
+                </li>
+                <li>
+                    Guppy match keys:
+                    MAC {{ guppy_keys.mac }},
+                    IP {{ guppy_keys.ip }}
+                </li>
+                <li>
+                    OADS match keys:
+                    MAC {{ oads_keys.mac }},
+                    IP {{ oads_keys.ip }}
+                </li>
+                <li>Matched profiles: {{ oads_status.matched | default(0) }}</li>
+            </ul>
+
+            {% if oads_status.submit_response_preview or oads_status.assets_response_preview %}
+                <h3>OADS response preview</h3>
+                {% if oads_status.submit_response_preview %}
+                    <strong>POST /api/v1/observations response</strong>
+                    <pre>{{ oads_status.submit_response_preview }}</pre>
+                {% endif %}
+                {% if oads_status.assets_response_preview %}
+                    <strong>GET /api/v1/assets response</strong>
+                    <pre>{{ oads_status.assets_response_preview }}</pre>
+                {% endif %}
+            {% endif %}
+        </details>
+    {% endif %}
+
     <h3>Assets</h3>
         <div class="legend">
         <strong>Asset visibility:</strong>
@@ -69,6 +129,17 @@
                     {% if not loop.last %}|{% endif %}
                 {% endfor %}
             </span>
+
+            {% if asset.oads_summary %}
+                <br>
+                <span class="muted">
+                    OADS profile:
+                    {% for field, value in asset.oads_summary.items() %}
+                        <strong>{{ field.replace('_', ' ') }}</strong>: {{ value }}
+                        {% if not loop.last %}|{% endif %}
+                    {% endfor %}
+                </span>
+            {% endif %}
         </li>
     {% endfor %}
     </ul>

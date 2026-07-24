@@ -1,5 +1,6 @@
 from pathlib import Path
-import uuid, threading, shutil, csv
+import os, uuid, threading, shutil, csv
+import urllib.error
 from io import StringIO
 from collections import defaultdict
 
@@ -13,6 +14,15 @@ from guppy_ics.web.routes.progress import sse_event_stream
 from fastapi.responses import StreamingResponse
 from guppy_ics.core.control import CancelToken
 from guppy_ics.protocols.registry import available_protocols
+from guppy_ics.integrations.oads import (
+    OADSClient,
+    attach_oads_profiles,
+    build_observations_payload,
+    debug_payload_preview,
+    guppy_match_key_counts,
+    normalize_oads_assets_payload,
+    oads_match_key_counts,
+)
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploaded_pcaps"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -23,6 +33,10 @@ router = APIRouter()
 _progress_buses = {}
 _cancel_tokens = {}
 _analysis_results = {}
+_analysis_oads = {}
+_oads_config = {
+    "base_url": None,
+}
 
 FUNCTION_NORMALIZATION = {
     # voor PROFINET
@@ -79,11 +93,13 @@ def normalize_function(func: str | None) -> str | None:
 
 @router.get("/upload", response_class=HTMLResponse)
 def upload_page(request: Request):
+    oads_context = _oads_template_context()
     return templates.TemplateResponse(
         "upload.html",
         {
             "request": request,
             "protocols": available_protocols(),
+            **oads_context,
         },
     )
 
@@ -91,6 +107,9 @@ def upload_page(request: Request):
 async def run_upload(request: Request, pcap: UploadFile = File(...)):
     form = await request.form()
     selected_protocols = form.getlist("protocols")
+    oads_enabled = _form_enabled(form.get("oads_enhance")) or _env_enabled("GUPPY_OADS_ENABLED")
+    oads_url = _resolve_oads_url(form.get("oads_url"))
+    _remember_oads_config(oads_url)
     bus_id = str(uuid.uuid4())
 
     bus = ProgressBus()
@@ -111,6 +130,13 @@ async def run_upload(request: Request, pcap: UploadFile = File(...)):
             enabled_protocols=selected_protocols or None,
             progress_cb=bus.push,
             cancel_token=cancel_token,
+        )
+
+        _analysis_oads[bus_id] = run_oads_enrichment(
+            state,
+            capture_id=Path(pcap.filename).stem or bus_id,
+            enabled=oads_enabled,
+            base_url=oads_url,
         )
 
         bus.done()
@@ -254,11 +280,14 @@ def upload_result(request: Request, bus_id: str):
     
     state = _analysis_results.get(bus_id)
     if not state:
+        oads_context = _oads_template_context()
         return templates.TemplateResponse(
             "upload.html",
             {
                 "request": request,
                 "error": "Analysis not finished or not found.",
+                "protocols": available_protocols(),
+                **oads_context,
             },
         )
 
@@ -278,6 +307,9 @@ def upload_result(request: Request, bus_id: str):
         }
 
         label = primary_label(a)
+        profile = a.get("oads_profile")
+        if isinstance(profile, dict):
+            a["oads_summary"] = summarize_oads_profile(profile)
 
         if is_broadcast_identifier(label):
             a["role"] = "broadcast"
@@ -396,6 +428,7 @@ def upload_result(request: Request, bus_id: str):
             "assets": assets,
             "communications": communications,
             "topology": topology,   
+            "oads_status": _analysis_oads.get(bus_id),
         },
     )
 
@@ -549,3 +582,126 @@ def export_firewall_csv(bus_id: str):
             "Content-Disposition": f"attachment; filename=firewall_rules_{bus_id}.csv"
         },
     )
+
+def run_oads_enrichment(
+    state,
+    *,
+    capture_id: str,
+    enabled: bool,
+    base_url: str,
+):
+    if not enabled:
+        return None
+
+    status = _empty_oads_status(state, base_url=base_url)
+
+    if not base_url:
+        status["message"] = "OADS enhancement was enabled, but the base URL is missing."
+        return status
+
+    client = OADSClient(base_url=base_url)
+    payload = build_observations_payload(state, capture_id)
+    status["observations"] = len(payload.get("observations", []))
+
+    try:
+        submit_response = client.submit_observations(payload)
+        status["submit_response_preview"] = debug_payload_preview(submit_response)
+        status["submitted"] = True
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        status["submit_error"] = str(exc)
+        status["message"] = f"OADS submit failed after building {status['observations']} observation(s)."
+        return status
+
+    try:
+        assets_response = client.get_assets()
+        status["assets_response_preview"] = debug_payload_preview(assets_response)
+        profiles = normalize_oads_assets_payload(assets_response)
+        status["fetched"] = True
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        status["fetch_error"] = str(exc)
+        status["message"] = "OADS accepted observations, but Guppy could not fetch enriched assets."
+        return status
+
+    status["fetched_assets"] = len(profiles)
+    status["oads_keys"] = oads_match_key_counts(profiles)
+    matched = attach_oads_profiles(state, profiles)
+    status["matched"] = matched
+    status["ok"] = matched > 0
+
+    if not profiles:
+        status["message"] = (
+            f"Submitted {status['observations']} observation(s), but OADS returned 0 assets."
+        )
+    elif status["oads_keys"]["mac"] == 0 and status["oads_keys"]["ip"] == 0:
+        status["message"] = (
+            f"OADS returned {status['fetched_assets']} asset(s), but none had MAC/IP identifiers Guppy can match."
+        )
+    elif matched == 0:
+        status["message"] = (
+            f"OADS returned {status['fetched_assets']} asset(s), but none matched Guppy assets by MAC or IP."
+        )
+    else:
+        status["message"] = (
+            f"Submitted {status['observations']} observation(s), fetched {status['fetched_assets']} OADS asset(s), "
+            f"and matched {matched} Guppy asset(s)."
+        )
+
+    return status
+
+def _empty_oads_status(state, *, base_url: str) -> dict:
+    return {
+        "enabled": True,
+        "ok": False,
+        "base_url": base_url,
+        "observations": 0,
+        "submitted": False,
+        "submit_error": None,
+        "fetched": False,
+        "fetch_error": None,
+        "fetched_assets": 0,
+        "matched": 0,
+        "guppy_keys": guppy_match_key_counts(state),
+        "oads_keys": {"mac": 0, "ip": 0},
+        "submit_response_preview": None,
+        "assets_response_preview": None,
+        "message": "",
+    }
+
+def summarize_oads_profile(profile: dict) -> dict:
+    fields = [
+        "name",
+        "hostname",
+        "vendor",
+        "manufacturer",
+        "model",
+        "device_type",
+        "os",
+        "embedded_os",
+        "firmware",
+        "firmware_version",
+    ]
+    return {field: profile.get(field) for field in fields if profile.get(field)}
+
+def _env_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+def _form_enabled(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+def _resolve_oads_url(form_value) -> str:
+    return str(
+        form_value
+        or _oads_config.get("base_url")
+        or os.environ.get("GUPPY_OADS_URL")
+        or "http://localhost:8000"
+    ).strip()
+
+def _remember_oads_config(base_url: str) -> None:
+    if base_url:
+        _oads_config["base_url"] = base_url
+
+def _oads_template_context() -> dict:
+    return {
+        "oads_enabled": _env_enabled("GUPPY_OADS_ENABLED") or bool(_oads_config.get("base_url")),
+        "oads_url": _oads_config.get("base_url") or os.environ.get("GUPPY_OADS_URL", "http://localhost:8000"),
+    }

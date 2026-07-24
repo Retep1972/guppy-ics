@@ -216,6 +216,24 @@ pre {
     margin: 0.25em 0;
 }
 
+.oads-details {
+    margin: 0.75em 0 1em 0;
+}
+
+.oads-details summary {
+    display: inline-block;
+    cursor: pointer;
+    padding: 4px 10px;
+    border: 1px solid #33ff66;
+    border-radius: 3px;
+    background: #000;
+    color: #66ff99;
+}
+
+.oads-details[open] summary {
+    margin-bottom: 0.75em;
+}
+
 /* ---- Topology tree ---- */
 
 .topology-tree {

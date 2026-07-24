@@ -8,8 +8,8 @@ def test_basic_state():
     b = state.register_asset("192.168.1.20", role="plc", protocol="modbus")
 
     state.register_communication(
-        src_ip="192.168.1.10",
-        dst_ip="192.168.1.20",
+        src="192.168.1.10",
+        dst="192.168.1.20",
         protocol="modbus",
         function="read_holding_registers"
     )

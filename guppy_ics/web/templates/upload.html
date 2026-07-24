@@ -39,6 +39,39 @@
 
         <br>
 
+        <fieldset>
+            <legend>OADS enrichment</legend>
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="oads_enhance"
+                    value="1"
+                    {% if oads_enabled %}checked{% endif %}
+                >
+                Submit passive observations to OADS and retrieve enriched asset profiles
+            </label>
+
+            <br><br>
+
+            <label>
+                OADS base URL
+                <input
+                    type="url"
+                    name="oads_url"
+                    value="{{ oads_url or '' }}"
+                    placeholder="http://localhost:8000"
+                >
+            </label>
+
+            <br>
+            <span class="muted">
+                The local Docker OADS API does not require authentication.
+            </span>
+        </fieldset>
+
+        <br>
+
         <button type="submit">Analyze PCAP</button>
     </form>
 
