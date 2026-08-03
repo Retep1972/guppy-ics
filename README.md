@@ -93,7 +93,7 @@ Select option **1** to start the web interface.
 The Web UI will be available at:
 
 ```
-http://127.0.0.1:8000
+http://127.0.0.1:8002
 ```
 
 Stop the server with **Ctrl-C**.
@@ -280,12 +280,17 @@ guppy live assets --pcap capture.pcap --speed 2.0   # double speed
 guppy live topology --pcap capture.pcap --loop
 
 ## OADS Enrichment
-OADS is a OT Asset Discovery Service. It is a REST backend for passive OT asset discovery from PCAP-derived observations.
-OADS is intended to run as a local Docker Compose appliance in the user's environment. Guppy ICS or another local application connects to the OADS HTTP API and retrieves enriched asset profiles from that local instance.
-To get OADS clone in seperate directory and follow the README.MD
+
+OADS is the OT Asset Discovery Service: a REST backend for passive OT asset
+discovery from PCAP-derived observations. It runs as a local Docker Compose
+appliance. Guppy connects to that local OADS HTTP API and retrieves enriched
+asset profiles from it.
+
+Get OADS in a separate directory and follow its README:
 
 ```bash
 git clone git@github.com:Retep1972/oads.git
+cd oads
 ```
 
 Guppy can optionally submit passive PCAP-derived observations to a local OADS

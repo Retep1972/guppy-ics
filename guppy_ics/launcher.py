@@ -38,7 +38,7 @@ def main():
 
 def _start_browser():
     print("\nStarting Guppy ICS Browser UI...\n")
-    print("Listening on http://127.0.0.1:8000")
+    print("Listening on http://127.0.0.1:8002")
     print("Press Ctrl-C to stop\n")
 
     subprocess.run(
