@@ -18,9 +18,24 @@ class ProfinetPlugin(ProtocolPlugin):
 
     def match(self, packet) -> bool:
         try:
-            # 1Native Ethernet PNIO
+            # Native Ethernet PNIO
             if hasattr(packet, "type") and packet.type == ETHERTYPE_PROFINET:
                 return True
+
+            # Avoid misclassifying RTP/other IP payloads that happen to start
+            # with bytes in the PROFINET frame-id range.
+            if packet.haslayer("IP"):
+                has_pnio_port = False
+                for layer_name in ("TCP", "UDP"):
+                    if packet.haslayer(layer_name):
+                        layer = packet[layer_name]
+                        has_pnio_port = (
+                            int(layer.sport) in self.ports
+                            or int(layer.dport) in self.ports
+                        )
+                        break
+                if not has_pnio_port:
+                    return False
 
             # Scapy-decoded Raw PNIO payload
             if packet.haslayer("Raw"):

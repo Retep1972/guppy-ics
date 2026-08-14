@@ -6,7 +6,7 @@ from scapy.layers.inet import IP, TCP
 class TCPPlugin(ProtocolPlugin):
     name = "tcp"
     slug = "tcp"
-    safe_by_default = True
+    safe_by_default = False
 
     def __init__(self):
         self.seen_flows = set()
@@ -44,5 +44,6 @@ class TCPPlugin(ProtocolPlugin):
             metadata={
                 "src_port": sport,
                 "dst_port": dport,
+                "transport": "tcp",
             },
         )

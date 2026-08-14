@@ -40,7 +40,7 @@ class ArpPlugin(ProtocolPlugin):
                     reason="arp_observed",
                 )
 
-            if is_valid_mac(arp.pdst) and arp.hwdst:
+            if is_valid_mac(arp.hwdst) and arp.hwdst:
                 state.link_identifiers(
                     arp.hwdst,
                     arp.pdst,

@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import List, Dict
 
 from guppy_ics.protocols.base import ProtocolPlugin
+from guppy_ics.protocols.discovery import DiscoveryEvidencePlugin
+from guppy_ics.protocols.http import HTTPPlugin
 from guppy_ics.protocols.modbus import ModbusPlugin
+from guppy_ics.protocols.onvif import ONVIFPlugin
 from guppy_ics.protocols.profinet import ProfinetPlugin
 from guppy_ics.protocols.arp import ArpPlugin
 from guppy_ics.protocols.l2l3 import L2L3LinkerPlugin
@@ -24,11 +27,14 @@ def _all_plugins() -> List[ProtocolPlugin]:
     """
     return [
         ModbusPlugin(),
+        ONVIFPlugin(),
+        HTTPPlugin(),
         ProfinetPlugin(),
         ArpPlugin(),
         L2L3LinkerPlugin(),
         IPv6DetectionPlugin(),
         TransportPlugin(),
+        DiscoveryEvidencePlugin(),
         TCPPlugin(),
         UDPPlugin(),
         S7CommPlugin(),

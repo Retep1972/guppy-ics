@@ -7,6 +7,8 @@ from guppy_ics.integrations.oads import (
     attach_oads_profiles,
     build_observations_payload,
     debug_payload_preview,
+    filter_payload_for_unknown_oads_assets,
+    submit_observations_in_batches,
     submit_observations_to_oads,
 )
 
@@ -198,3 +200,43 @@ def test_debug_payload_preview_is_json_and_truncated():
 
     assert '"response"' in preview
     assert "truncated" in preview
+
+
+def test_payload_filter_skips_observations_for_assets_already_known_to_oads():
+    payload = {
+        "source": "guppy-ics",
+        "capture_id": "capture-1",
+        "observations": [
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.10", "protocol": "modbus", "field": "mac", "value": "AA"},
+            {"mac": "00:11:22:33:44:55", "ip": "192.168.1.20", "protocol": "dhcp", "field": "hostname", "value": "new"},
+        ],
+    }
+
+    filtered, skipped = filter_payload_for_unknown_oads_assets(
+        payload,
+        [{"primary_mac": "aa:bb:cc:dd:ee:ff", "ips": ["192.168.1.10"]}],
+    )
+
+    assert skipped == 1
+    assert filtered["observations"] == [payload["observations"][1]]
+
+
+def test_batched_submit_stops_after_first_failed_batch():
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        def submit_observations(self, payload):
+            self.calls += 1
+            if self.calls == 2:
+                raise TimeoutError("slow")
+            return {"accepted": len(payload["observations"])}
+
+    payload = {"source": "guppy-ics", "capture_id": "capture-1", "observations": [{"field": str(i)} for i in range(5)]}
+
+    result = submit_observations_in_batches(Client(), payload, batch_size=2)
+
+    assert result["submitted"] is True
+    assert result["submitted_observations"] == 2
+    assert result["failed"] is True
+    assert result["error"] == "slow"

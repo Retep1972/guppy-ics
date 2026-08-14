@@ -21,7 +21,7 @@
         <br>
 
         <fieldset>
-            <legend>Protocols to analyze. If none selected all are analyzed</legend>
+            <legend>Protocols to analyze. Leave empty to analyze all protocols.</legend>
 
             {% for proto in protocols %}
                 <label>
@@ -29,7 +29,6 @@
                         type="checkbox"
                         name="protocols"
                         value="{{ proto.slug }}"
-                        {% if proto.safe_by_default %}checked{% endif %}
                     >
                     {{ proto.name }}
                 </label>

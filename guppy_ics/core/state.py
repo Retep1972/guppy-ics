@@ -1,8 +1,10 @@
 import uuid
 from typing import Dict, Any, Optional
+from guppy_ics.core.addressing import classify_ip_address
 from guppy_ics.protocols.mac_helper import is_valid_mac
 
 INVALID_ASSET = "__invalid_asset__"
+MAX_EVIDENCE = 10000
 
 class AnalysisState:
     """
@@ -22,6 +24,12 @@ class AnalysisState:
 
         # optional protocol-level events
         self.events = []
+
+        # Bounded passive evidence extracted from packets.
+        self.evidence = []
+
+        # Non-asset endpoints such as multicast and broadcast destinations.
+        self.special_addresses: Dict[str, Dict[str, Any]] = {}
 
     # -------------------------
     # Asset handling
@@ -48,9 +56,15 @@ class AnalysisState:
                 return INVALID_ASSET
 
             if id_type == "ip" and identifier == "0.0.0.0":
+                self.register_special_address(identifier)
+                return INVALID_ASSET
+
+            if id_type in ("ip", "ipv6") and classify_ip_address(identifier):
+                self.register_special_address(identifier)
                 return INVALID_ASSET
 
             if id_type == "ipv6" and identifier.lower().startswith("ff"):
+                self.register_special_address(identifier)
                 return INVALID_ASSET
 
             asset = {
@@ -137,6 +151,44 @@ class AnalysisState:
 
         if metadata:
             comm["metadata"].update(metadata)
+
+    def register_special_address(self, identifier: str) -> None:
+        classification = classify_ip_address(identifier)
+        if not classification:
+            return
+        entry = self.special_addresses.setdefault(
+            identifier,
+            {
+                "identifier": identifier,
+                "classification": classification,
+                "count": 0,
+            },
+        )
+        entry["count"] += 1
+
+    def register_evidence(
+        self,
+        *,
+        evidence_type: str,
+        protocol: str,
+        attributes: Dict[str, Any],
+        source_asset: Optional[str] = None,
+        destination_asset: Optional[str] = None,
+        timestamp: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if len(self.evidence) >= MAX_EVIDENCE:
+            return None
+
+        entry = {
+            "type": evidence_type,
+            "protocol": protocol,
+            "source_asset": source_asset,
+            "destination_asset": destination_asset,
+            "timestamp": timestamp,
+            "attributes": self._bounded_plain(attributes),
+        }
+        self.evidence.append(entry)
+        return entry
 
     # Backward compatibility helper
     def register_communication_ip_compat(self, **kwargs):
@@ -300,6 +352,7 @@ class AnalysisState:
             "assets": len(self.assets),
             "communications": len(self.communications),
             "events": len(self.events),
+            "evidence": len(self.evidence),
         }
 
     def _infer_identifier_type(self, identifier: str) -> str:
@@ -316,6 +369,25 @@ class AnalysisState:
             return "ipv6"
 
         return "unknown"
+
+    def _bounded_plain(self, value: Any, *, max_items: int = 50, max_string: int = 300) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(k): self._bounded_plain(v, max_items=max_items, max_string=max_string)
+                for k, v in list(value.items())[:max_items]
+                if v is not None
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [
+                self._bounded_plain(v, max_items=max_items, max_string=max_string)
+                for v in list(value)[:max_items]
+                if v is not None
+            ]
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="ignore")
+        if isinstance(value, str) and len(value) > max_string:
+            return value[:max_string]
+        return value
 
     def infer_profinet_roles(self) -> None: # dead code, remove after testing
         """

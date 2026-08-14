@@ -25,11 +25,30 @@
             {% set oads_keys = oads_status.oads_keys | default({"mac": 0, "ip": 0}) %}
             <ul class="legend-list">
                 <li>Endpoint: <code>{{ oads_status.base_url | default("") }}</code></li>
+                <li>
+                    Health:
+                    {% if oads_status.health %}
+                        OK
+                    {% else %}
+                        failed{% if oads_status.health_error %}: {{ oads_status.health_error }}{% endif %}
+                    {% endif %}
+                </li>
+                <li>
+                    Assets preflight:
+                    {% if oads_status.preflight_assets %}
+                        OK, {{ oads_status.preflight_assets_count }} asset(s)
+                    {% else %}
+                        failed{% if oads_status.preflight_assets_error %}: {{ oads_status.preflight_assets_error }}{% endif %}
+                    {% endif %}
+                </li>
                 <li>Observations submitted by Guppy: {{ oads_status.observations | default(0) }}</li>
+                <li>Skipped known OADS observations: {{ oads_status.skipped_known_observations | default(0) }}</li>
+                <li>Observations POSTed to OADS: {{ oads_status.submit_observations | default(0) }}</li>
+                <li>Accepted before timeout/failure: {{ oads_status.submitted_observations | default(0) }}</li>
                 <li>
                     Submit:
                     {% if oads_status.submitted %}
-                        OK
+                        OK{% if oads_status.partial_submit %}, partial{% endif %}
                     {% else %}
                         failed{% if oads_status.submit_error %}: {{ oads_status.submit_error }}{% endif %}
                     {% endif %}
@@ -57,6 +76,10 @@
 
             {% if oads_status.submit_response_preview or oads_status.assets_response_preview %}
                 <h3>OADS response preview</h3>
+                {% if oads_status.health_response_preview %}
+                    <strong>GET /health response</strong>
+                    <pre>{{ oads_status.health_response_preview }}</pre>
+                {% endif %}
                 {% if oads_status.submit_response_preview %}
                     <strong>POST /api/v1/observations response</strong>
                     <pre>{{ oads_status.submit_response_preview }}</pre>
@@ -143,6 +166,40 @@
         </li>
     {% endfor %}
     </ul>
+
+    {% if evidence or special_addresses %}
+    <details class="evidence-details">
+        <summary>Evidence details</summary>
+
+        {% if special_addresses %}
+            <h4>Infrastructure addresses</h4>
+            <ul class="legend-list">
+            {% for endpoint in special_addresses %}
+                <li>
+                    <code>{{ endpoint.identifier }}</code>
+                    {{ endpoint.classification.replace('_', ' ') }}
+                    ({{ endpoint.count }} observation{{ "" if endpoint.count == 1 else "s" }})
+                </li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if evidence %}
+            <h4>Passive evidence sent to enrichment</h4>
+            <ul class="comm-list">
+            {% for item in evidence %}
+                <li class="comm-item">
+                    <span class="badge badge-{{ item.protocol }}">{{ item.protocol }}</span>
+                    <span class="badge badge-function">{{ item.type }}</span>
+                    <br>
+                    {{ item.source }}
+                    <span class="muted">{{ item.summary }}</span>
+                </li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    </details>
+    {% endif %}
 
     <h3>Communications</h3>
     <ul class="comm-list">

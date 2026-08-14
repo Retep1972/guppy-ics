@@ -1,4 +1,5 @@
 from __future__ import annotations
+from guppy_ics.core.addressing import classify_ip_address
 from guppy_ics.protocols.base import ProtocolPlugin
 from guppy_ics.protocols.mac_helper import is_valid_mac
 
@@ -34,6 +35,11 @@ class L2L3LinkerPlugin(ProtocolPlugin):
             dst_mac = packet.dst
             src_ip = ip.src
             dst_ip = ip.dst
+
+            if classify_ip_address(src_ip):
+                state.register_special_address(src_ip)
+            if classify_ip_address(dst_ip):
+                state.register_special_address(dst_ip)
 
             if is_valid_mac(src_mac) and src_ip:
                 state.link_identifiers(

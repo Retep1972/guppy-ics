@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from guppy_ics.analysis.run import analyze_pcap, analyze_source
+from guppy_ics.core.communications import filter_communications_for_presentation
 from guppy_ics.core.sources.live import LiveInterfaceSource
 from guppy_ics.protocols.registry import load_plugins
 from guppy_ics.core.dispatcher import ProtocolDispatcher
@@ -19,9 +20,11 @@ from guppy_ics.integrations.oads import (
     attach_oads_profiles,
     build_observations_payload,
     debug_payload_preview,
+    filter_payload_for_unknown_oads_assets,
     guppy_match_key_counts,
     normalize_oads_assets_payload,
     oads_match_key_counts,
+    submit_observations_in_batches,
 )
 from collections import defaultdict
 
@@ -85,6 +88,11 @@ def filter_communications_for_ui(communications: List[dict]) -> List[dict]:
     - Fallback to tcp/udp if no application protocol exists
     - Never show pure IP
     """
+    return filter_communications_for_presentation(
+        communications,
+        transport_protocols=TRANSPORT_PROTOCOLS,
+    )
+
     flows = defaultdict(list)
 
     for c in communications:
@@ -249,6 +257,11 @@ def _extract_comms(state: Any) -> List[Dict[str, Any]]:
     out.sort(key=lambda x: (str(x.get("protocol", "")), -int(x.get("count", 0) or 0)))
     return out
 
+
+def _extract_evidence(state: Any) -> List[Dict[str, Any]]:
+    evidence = getattr(state, "evidence", []) or []
+    return [_to_plain(e) for e in evidence if isinstance(e, dict)]
+
 def render_report_text(state: Any, only: str = "all") -> str:
     parts: List[str] = []
 
@@ -360,6 +373,30 @@ def render_report_text(state: Any, only: str = "all") -> str:
 
         parts.append("")
 
+    if only == "all":
+        evidence = _extract_evidence(state)[:25]
+        parts.append("=== Evidence ===")
+        if not evidence:
+            parts.append("(no structured evidence collected)")
+        else:
+            rows = []
+            labels = _asset_label_by_id(state)
+            for item in evidence:
+                attrs = item.get("attributes", {}) or {}
+                source = labels.get(str(item.get("source_asset")), attrs.get("src_ip") or "-")
+                summary = []
+                for key in ("hostname", "vendor_class", "message_type", "queries", "answers", "types", "st", "dst_port", "scope"):
+                    if attrs.get(key) not in (None, "", [], {}):
+                        summary.append(f"{key}={attrs.get(key)}")
+                rows.append([
+                    str(item.get("protocol", "-")),
+                    str(item.get("type", "-")),
+                    str(source),
+                    "; ".join(summary)[:160],
+                ])
+            parts.append(_table(rows, headers=["Protocol", "Type", "Source", "Observed"]))
+        parts.append("")
+
     return "\n".join(parts).rstrip() + "\n"
 
 def render_report_json(state: Any, only: str = "all") -> str:
@@ -379,6 +416,10 @@ def render_report_json(state: Any, only: str = "all") -> str:
 
     if only in ("all", "topology"):
         payload["topology"] = build_topology_from_communications(comms, state)
+
+    if only == "all":
+        payload["evidence"] = _extract_evidence(state)
+        payload["special_addresses"] = _to_plain(getattr(state, "special_addresses", {}))
 
     return json.dumps(payload, indent=2) + "\n"
 
@@ -627,15 +668,44 @@ def maybe_enhance_with_oads(state: Any, *, capture_id: str, args: Any) -> None:
         print("WARNING: OADS enhancement requested but GUPPY_OADS_URL/--oads-url is missing")
         return
 
-    client = OADSClient(base_url=base_url)
+    client = OADSClient(base_url=base_url, timeout=_oads_timeout())
     payload = build_observations_payload(state, capture_id)
     print(f"[+] OADS: submitting {len(payload.get('observations', []))} passive observation(s) to {base_url}")
     try:
-        submit_response = client.submit_observations(payload)
+        health_response = client.health()
+        print("[+] OADS health OK:")
+        print(debug_payload_preview(health_response, max_chars=500))
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        print(f"WARNING: OADS health check failed: {exc}")
+
+    preflight_assets = []
+    try:
+        preflight_assets = normalize_oads_assets_payload(client.get_assets())
+        print(f"[+] OADS assets preflight OK: {len(preflight_assets)} asset(s)")
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        print(f"WARNING: OADS assets preflight failed: {exc}")
+
+    submit_payload = payload
+    if preflight_assets and _oads_skip_known_assets():
+        submit_payload, skipped = filter_payload_for_unknown_oads_assets(payload, preflight_assets)
+        print(
+            f"[+] OADS: skipped {skipped} observation(s) for assets already known to OADS; "
+            f"{len(submit_payload.get('observations', []))} new observation(s) remain"
+        )
+
+    try:
+        submit_response = submit_observations_in_batches(
+            client,
+            submit_payload,
+            batch_size=_oads_batch_size(),
+        )
         print("[+] OADS submit response preview:")
         print(debug_payload_preview(submit_response, max_chars=1500))
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
         print(f"WARNING: OADS observation submit failed: {exc}")
+        if preflight_assets:
+            matched = attach_oads_profiles(state, preflight_assets)
+            print(f"[+] OADS: attached {matched} existing profile(s) from assets preflight")
         return
 
     try:
@@ -663,6 +733,24 @@ def _oads_enabled(args: Any) -> bool:
         return True
     value = os.environ.get("GUPPY_OADS_ENABLED", "")
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _oads_timeout() -> float:
+    try:
+        return float(os.environ.get("GUPPY_OADS_TIMEOUT", "5"))
+    except ValueError:
+        return 5.0
+
+
+def _oads_batch_size() -> int:
+    try:
+        return max(1, int(os.environ.get("GUPPY_OADS_BATCH_SIZE", "100")))
+    except ValueError:
+        return 100
+
+
+def _oads_skip_known_assets() -> bool:
+    return os.environ.get("GUPPY_OADS_SKIP_KNOWN_ASSETS", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 def _clear_screen():
     os.system("cls" if os.name == "nt" else "clear")

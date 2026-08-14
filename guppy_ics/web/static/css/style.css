@@ -117,6 +117,16 @@ pre {
     border-color: #ff9966;
 }
 
+.badge-onvif {
+    color: #99ffcc;
+    border-color: #99ffcc;
+}
+
+.badge-http {
+    color: #ccff99;
+    border-color: #ccff99;
+}
+
 .badge-iec104 {
     color: #ff66cc;
     border-color: #ff66cc;
@@ -216,11 +226,13 @@ pre {
     margin: 0.25em 0;
 }
 
-.oads-details {
+.oads-details,
+.evidence-details {
     margin: 0.75em 0 1em 0;
 }
 
-.oads-details summary {
+.oads-details summary,
+.evidence-details summary {
     display: inline-block;
     cursor: pointer;
     padding: 4px 10px;
@@ -230,7 +242,8 @@ pre {
     color: #66ff99;
 }
 
-.oads-details[open] summary {
+.oads-details[open] summary,
+.evidence-details[open] summary {
     margin-bottom: 0.75em;
 }
 

@@ -25,9 +25,13 @@ security practitioners.
   - PROFINET IO
   - S7comm (ISO-on-TCP)
   - Modbus TCP
+  - HTTP banners and metadata
+  - ONVIF / RTSP cameras
   - OPC UA
   - IEC 60870-5-104
+  - DHCP, DNS, LLMNR, mDNS, NetBIOS, SSDP, and WS-Discovery evidence
 - Automatic identity linking (MAC ↔ IP)
+- Conservative handling of broadcast, multicast, and special addresses
 - Logical topology generation
 - Firewall rule generation (CSV)
 - Web UI (FastAPI)
@@ -97,6 +101,16 @@ http://127.0.0.1:8002
 ```
 
 Stop the server with **Ctrl-C**.
+
+The upload page does not preselect protocol checkboxes. If no protocols are
+selected, Guppy analyzes all available protocols. Select one or more protocols
+only when you want to limit analysis.
+
+The result page includes an **Evidence details** section for passive discovery
+evidence such as DHCP hostnames, DNS/LLMNR queries, SSDP headers, WS-Discovery
+XML fields, and generic TCP/UDP service observations. Broadcast and multicast
+addresses are tracked as infrastructure/special addresses and are not shown as
+ordinary assets.
 
 ### Command Line Interface (CLI)
 
@@ -209,7 +223,7 @@ ensuring consistent results across all interfaces.
 
 ```bash
 guppy live assets --iface eth0
-
+```
 
 Shows discovered devices, identifiers, roles, vendors, and protocols.
 
@@ -232,16 +246,19 @@ Shows a logical, protocol-aware topology derived from observed traffic.
 
 ### Common live options
 
+```text
 --protocol <name>     Limit analysis to specific protocols (repeatable)
 --bpf <filter>        Berkeley Packet Filter applied at capture time
 --interval <seconds>  Refresh interval (default: 5)
 --once                Render a single snapshot and exit
 --out <file>          Write output to a file
-
+```
 
 Example:
 
+```bash
 guppy live topology --iface eth0 --protocol profinet --interval 10 --out topology.txt
+```
 
 ---
 
@@ -264,20 +281,26 @@ No network interface is required, and no packets are sent onto the wire.
 
 #### Live PCAP assets
 
+```bash
 guppy live assets --pcap capture.pcap
 guppy live comms --pcap capture.pcap
 guppy live topology --pcap capture.pcap
+```
 
-## Timing control
+#### Timing control
 
-## Replay speed can be adjusted:
+Replay speed can be adjusted:
 
+```bash
 guppy live assets --pcap capture.pcap --speed 0.5   # half speed
 guppy live assets --pcap capture.pcap --speed 2.0   # double speed
+```
 
-## Loop a capture continuously:
+Loop a capture continuously:
 
+```bash
 guppy live topology --pcap capture.pcap --loop
+```
 
 ## OADS Enrichment
 
@@ -325,9 +348,41 @@ Environment variables:
 ```text
 GUPPY_OADS_ENABLED=true
 GUPPY_OADS_URL=http://localhost:8000
+GUPPY_OADS_TIMEOUT=5
+GUPPY_OADS_MAX_OBSERVATIONS=1500
+GUPPY_OADS_BATCH_SIZE=100
+GUPPY_OADS_SKIP_KNOWN_ASSETS=true
 ```
 
 The local OADS Docker API does not require an API key.
+
+Guppy checks OADS health and fetches the current OADS asset list before
+submitting observations. If OADS already knows an asset by MAC or IP, Guppy
+skips reposting observations for that asset by default and attaches the
+existing OADS profile instead. This avoids overloading OADS with repeated
+evidence for already-known assets.
+
+Observation submits are batched. If a batch times out or fails, Guppy logs or
+shows a warning and continues local analysis output. In the Web UI, **OADS
+details** shows health status, asset preflight status, total observations
+built, skipped known observations, observations POSTed, and how many were
+accepted before a failure.
+
+Guppy sends passive evidence only. Current evidence includes asset identifiers,
+generic TCP/UDP service observations, DHCP host/vendor options, DNS/LLMNR/mDNS
+records, NetBIOS service evidence, SSDP headers, WS-Discovery XML fields,
+HTTP/ONVIF/RTSP metadata, and OT protocol observations where Guppy can parse
+raw values. OADS remains responsible for vendor, model, device type, OS, and
+confidence inference.
+
+Communications and topology prefer the most specific observed protocol. For
+example, if Modbus TCP is detected, Guppy shows the communication as `modbus`
+and suppresses a duplicate generic `tcp` row for the same asset pair and
+service port. Generic `tcp` or `udp` rows are still shown when no more specific
+protocol parser matched.
+
+Current field-level coverage is tracked in
+[`docs/oads_coverage.md`](docs/oads_coverage.md).
 
 ## Firewall Rule Generation
 
@@ -373,8 +428,6 @@ The CSV can be:
 ---
 
 ## Notes and Limitations
-
-# Notes and Limitations
 
 - Guppy performs **passive analysis only** — it never sends packets into the network.
 - Asset discovery is **best-effort inference** based on observed traffic.

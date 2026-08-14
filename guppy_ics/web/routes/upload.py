@@ -12,6 +12,7 @@ from guppy_ics.web.deps import templates
 from guppy_ics.web.progress import ProgressBus
 from guppy_ics.web.routes.progress import sse_event_stream
 from fastapi.responses import StreamingResponse
+from guppy_ics.core.communications import filter_communications_for_presentation
 from guppy_ics.core.control import CancelToken
 from guppy_ics.protocols.registry import available_protocols
 from guppy_ics.integrations.oads import (
@@ -19,9 +20,11 @@ from guppy_ics.integrations.oads import (
     attach_oads_profiles,
     build_observations_payload,
     debug_payload_preview,
+    filter_payload_for_unknown_oads_assets,
     guppy_match_key_counts,
     normalize_oads_assets_payload,
     oads_match_key_counts,
+    submit_observations_in_batches,
 )
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploaded_pcaps"
@@ -175,6 +178,17 @@ def filter_communications_for_ui(communications):
     - Fallback to tcp/udp if no application protocol exists
     - Never show pure IP
     """
+    filtered = filter_communications_for_presentation(
+        communications,
+        transport_protocols=TRANSPORT_PROTOCOLS,
+    )
+    for selected in filtered:
+        meta = selected.get("metadata", {})
+        if meta.get("dst_port") and selected.get("dst_ip"):
+            selected["dst_display"] = f"{selected['dst_label']} ({selected['dst_ip']})"
+        else:
+            selected["dst_display"] = selected.get("dst_label")
+    return filtered
 
     flows = defaultdict(list)
 
@@ -428,6 +442,8 @@ def upload_result(request: Request, bus_id: str):
             "assets": assets,
             "communications": communications,
             "topology": topology,   
+            "evidence": summarize_evidence(getattr(state, "evidence", []), asset_labels),
+            "special_addresses": sorted(getattr(state, "special_addresses", {}).values(), key=lambda x: x.get("identifier", "")),
             "oads_status": _analysis_oads.get(bus_id),
         },
     )
@@ -599,17 +615,61 @@ def run_oads_enrichment(
         status["message"] = "OADS enhancement was enabled, but the base URL is missing."
         return status
 
-    client = OADSClient(base_url=base_url)
+    client = OADSClient(base_url=base_url, timeout=_oads_timeout())
     payload = build_observations_payload(state, capture_id)
     status["observations"] = len(payload.get("observations", []))
 
     try:
-        submit_response = client.submit_observations(payload)
-        status["submit_response_preview"] = debug_payload_preview(submit_response)
+        health_response = client.health()
+        status["health"] = True
+        status["health_response_preview"] = debug_payload_preview(health_response)
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        status["health_error"] = str(exc)
+
+    preflight_profiles = []
+    try:
+        preflight_assets_response = client.get_assets()
+        preflight_profiles = normalize_oads_assets_payload(preflight_assets_response)
+        status["preflight_assets"] = True
+        status["preflight_assets_count"] = len(preflight_profiles)
+        status["oads_keys"] = oads_match_key_counts(preflight_profiles)
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+        status["preflight_assets_error"] = str(exc)
+
+    submit_payload = payload
+    if preflight_profiles and _oads_skip_known_assets():
+        submit_payload, skipped = filter_payload_for_unknown_oads_assets(payload, preflight_profiles)
+        status["skipped_known_observations"] = skipped
+        status["submit_observations"] = len(submit_payload.get("observations", []))
+    else:
+        status["submit_observations"] = status["observations"]
+
+    try:
+        submit_result = submit_observations_in_batches(
+            client,
+            submit_payload,
+            batch_size=_oads_batch_size(),
+        )
+        status["submit_response_preview"] = debug_payload_preview(submit_result)
         status["submitted"] = True
+        status["submitted_observations"] = submit_result["submitted_observations"]
+        if submit_result.get("failed"):
+            status["submit_error"] = submit_result.get("error")
+            status["partial_submit"] = submit_result["submitted_observations"] > 0
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
         status["submit_error"] = str(exc)
-        status["message"] = f"OADS submit failed after building {status['observations']} observation(s)."
+        if status.get("health") or status.get("preflight_assets"):
+            status["message"] = (
+                f"OADS is reachable, but POST /api/v1/observations timed out after building "
+                f"{status['observations']} observation(s)."
+            )
+        else:
+            status["message"] = f"OADS submit failed after building {status['observations']} observation(s)."
+        if preflight_profiles:
+            matched = attach_oads_profiles(state, preflight_profiles)
+            status["matched"] = matched
+            status["fetched_assets"] = len(preflight_profiles)
+            status["message"] += f" Attached {matched} existing OADS profile(s) from preflight."
         return status
 
     try:
@@ -630,7 +690,7 @@ def run_oads_enrichment(
 
     if not profiles:
         status["message"] = (
-            f"Submitted {status['observations']} observation(s), but OADS returned 0 assets."
+            f"Submitted {status['submitted_observations']} observation(s), but OADS returned 0 assets."
         )
     elif status["oads_keys"]["mac"] == 0 and status["oads_keys"]["ip"] == 0:
         status["message"] = (
@@ -642,11 +702,60 @@ def run_oads_enrichment(
         )
     else:
         status["message"] = (
-            f"Submitted {status['observations']} observation(s), fetched {status['fetched_assets']} OADS asset(s), "
+            f"Submitted {status['submitted_observations']} observation(s), fetched {status['fetched_assets']} OADS asset(s), "
             f"and matched {matched} Guppy asset(s)."
         )
+        if status["skipped_known_observations"]:
+            status["message"] += f" Skipped {status['skipped_known_observations']} observation(s) for assets already known to OADS."
 
     return status
+
+
+def summarize_evidence(evidence, asset_labels):
+    rows = []
+    for item in list(evidence or [])[:200]:
+        if not isinstance(item, dict):
+            continue
+        attrs = item.get("attributes", {}) or {}
+        source_asset = item.get("source_asset")
+        rows.append(
+            {
+                "type": item.get("type", "evidence"),
+                "protocol": item.get("protocol", "unknown"),
+                "source": asset_labels.get(source_asset, attrs.get("src_ip") or source_asset or "-"),
+                "summary": _evidence_summary(item),
+            }
+        )
+    return rows
+
+
+def _evidence_summary(item):
+    attrs = item.get("attributes", {}) or {}
+    parts = []
+    for key in (
+        "hostname",
+        "vendor_class",
+        "message_type",
+        "queries",
+        "answers",
+        "types",
+        "st",
+        "nt",
+        "dst_port",
+        "scope",
+        "server",
+        "location",
+    ):
+        value = attrs.get(key)
+        if value in (None, "", [], {}):
+            continue
+        parts.append(f"{key}: {_short_value(value)}")
+    return " | ".join(parts) if parts else _short_value(attrs)
+
+
+def _short_value(value, max_len=220):
+    text = str(value)
+    return text if len(text) <= max_len else text[:max_len] + "..."
 
 def _empty_oads_status(state, *, base_url: str) -> dict:
     return {
@@ -654,11 +763,21 @@ def _empty_oads_status(state, *, base_url: str) -> dict:
         "ok": False,
         "base_url": base_url,
         "observations": 0,
+        "submit_observations": 0,
+        "submitted_observations": 0,
+        "skipped_known_observations": 0,
+        "partial_submit": False,
         "submitted": False,
         "submit_error": None,
         "fetched": False,
         "fetch_error": None,
         "fetched_assets": 0,
+        "health": False,
+        "health_error": None,
+        "health_response_preview": None,
+        "preflight_assets": False,
+        "preflight_assets_error": None,
+        "preflight_assets_count": 0,
         "matched": 0,
         "guppy_keys": guppy_match_key_counts(state),
         "oads_keys": {"mac": 0, "ip": 0},
@@ -666,6 +785,24 @@ def _empty_oads_status(state, *, base_url: str) -> dict:
         "assets_response_preview": None,
         "message": "",
     }
+
+
+def _oads_timeout() -> float:
+    try:
+        return float(os.environ.get("GUPPY_OADS_TIMEOUT", "5"))
+    except ValueError:
+        return 5.0
+
+
+def _oads_batch_size() -> int:
+    try:
+        return max(1, int(os.environ.get("GUPPY_OADS_BATCH_SIZE", "100")))
+    except ValueError:
+        return 100
+
+
+def _oads_skip_known_assets() -> bool:
+    return os.environ.get("GUPPY_OADS_SKIP_KNOWN_ASSETS", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 def summarize_oads_profile(profile: dict) -> dict:
     fields = [

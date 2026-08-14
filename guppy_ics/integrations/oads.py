@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -26,6 +27,36 @@ SAFE_COMM_METADATA_FIELDS = {
     "manufacturer_id",
     "vendor_id",
 }
+
+HIGH_VALUE_EVIDENCE_FIELDS = {
+    "dhcp": {
+        "hostname",
+        "fqdn",
+        "vendor_class",
+        "client_identifier",
+        "requested_ip",
+        "server_identifier",
+        "message_type",
+        "parameter_request_list",
+    },
+    "dns": {"queries", "answers"},
+    "llmnr": {"queries", "answers"},
+    "mdns": {"queries", "answers"},
+    "netbios": {"message_type", "names", "scope"},
+    "ssdp": {"host", "st", "nt", "nts", "usn", "server", "location", "cache_control", "scope"},
+    "ws_discovery": {
+        "types",
+        "scopes",
+        "endpoint_address",
+        "xaddrs",
+        "metadata_version",
+        "message_id",
+        "relates_to",
+        "scope",
+    },
+}
+
+SERVICE_EVIDENCE_TYPES = {"tcp_service_observation", "udp_service_observation"}
 
 
 @dataclass
@@ -129,8 +160,31 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
                 )
             )
 
+        raw_identity = metadata.get("raw_protocol_identity")
+        if isinstance(raw_identity, dict):
+            for protocol, fields in sorted(raw_identity.items()):
+                if not isinstance(fields, dict):
+                    continue
+                for field, value in sorted(fields.items()):
+                    observations.append(
+                        _observation(
+                            asset=asset,
+                            asset_id=asset_id,
+                            protocol=str(protocol),
+                            field=str(field),
+                            value=value,
+                        )
+                    )
+
     for comm in _iter_comms(state):
         protocol = comm.get("protocol") or "unknown"
+        metadata = comm.get("metadata", {}) or {}
+        comm_context = {
+            "source_port": metadata.get("src_port"),
+            "destination_port": metadata.get("dst_port"),
+            "transport": metadata.get("transport"),
+            "function": comm.get("function"),
+        }
         for endpoint in ("src_asset_id", "dst_asset_id"):
             asset_id = comm.get(endpoint)
             asset = getattr(state, "assets", {}).get(asset_id, {})
@@ -146,10 +200,10 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
                         protocol=protocol,
                         field="protocol_function",
                         value=function,
+                        raw_context=comm_context,
                     )
                 )
 
-            metadata = comm.get("metadata", {}) or {}
             for field in sorted(SAFE_COMM_METADATA_FIELDS):
                 if field in metadata:
                     observations.append(
@@ -159,8 +213,111 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
                             protocol=protocol,
                             field=field,
                             value=metadata[field],
+                            raw_context=comm_context,
                         )
                     )
+
+            if (
+                protocol == "onvif"
+                and comm.get("function") in {"rtsp_control", "rtsp_media"}
+                and asset_id == metadata.get("server_asset_id")
+            ):
+                observations.append(
+                    _observation(
+                        asset=asset,
+                        asset_id=asset_id,
+                        protocol="rtsp",
+                        field="media_type",
+                        value=metadata.get("media_type", "video"),
+                        raw_context=comm_context,
+                    )
+                )
+                for field in ("server", "session", "request_uri", "user_agent"):
+                    if not metadata.get(field):
+                        continue
+                    observations.append(
+                        _observation(
+                            asset=asset,
+                            asset_id=asset_id,
+                            protocol="rtsp",
+                            field=field,
+                            value=metadata[field],
+                            raw_context=comm_context,
+                        )
+                    )
+
+    service_seen = set()
+    for evidence in _iter_evidence(state):
+        protocol = evidence.get("protocol") or "unknown"
+        evidence_type = evidence.get("type") or "evidence"
+        asset_id = evidence.get("source_asset") or evidence.get("destination_asset")
+        asset = getattr(state, "assets", {}).get(asset_id, {}) if asset_id else {}
+        if not asset:
+            continue
+
+        attributes = evidence.get("attributes", {}) or {}
+        evidence_context = {
+            "evidence_type": evidence_type,
+            "source_asset": evidence.get("source_asset"),
+            "destination_asset": evidence.get("destination_asset"),
+            "source": "guppy-ics",
+        }
+
+        if evidence_type in SERVICE_EVIDENCE_TYPES:
+            service_key = (
+                asset_id,
+                protocol,
+                attributes.get("server_port") or attributes.get("dst_port"),
+                attributes.get("scope"),
+            )
+            if service_key in service_seen:
+                continue
+            service_seen.add(service_key)
+            for field in ("evidence_type", "dst_port", "server_port", "scope", "transport_protocol"):
+                value = evidence_type if field == "evidence_type" else attributes.get(field)
+                if value in (None, "", [], {}):
+                    continue
+                observations.append(
+                    _observation(
+                        asset=asset,
+                        asset_id=asset_id,
+                        protocol=protocol,
+                        field=field,
+                        value=value,
+                        raw_context=evidence_context,
+                        timestamp=evidence.get("timestamp"),
+                    )
+                )
+            continue
+
+        observations.append(
+            _observation(
+                asset=asset,
+                asset_id=asset_id,
+                protocol=protocol,
+                field="evidence_type",
+                value=evidence_type,
+                raw_context=evidence_context,
+                timestamp=evidence.get("timestamp"),
+            )
+        )
+        allowed_fields = HIGH_VALUE_EVIDENCE_FIELDS.get(str(evidence_type), set())
+        for field, value in sorted(attributes.items()):
+            if allowed_fields and field not in allowed_fields:
+                continue
+            observations.append(
+                _observation(
+                    asset=asset,
+                    asset_id=asset_id,
+                    protocol=protocol,
+                    field=str(field),
+                    value=value,
+                    raw_context=evidence_context,
+                    timestamp=evidence.get("timestamp"),
+                )
+            )
+
+    observations = _limit_observations(_dedupe_observations(observations))
 
     return {
         "source": "guppy-ics",
@@ -176,6 +333,75 @@ def submit_observations_to_oads(state: Any, capture_id: str, client: OADSClient)
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
         print(f"WARNING: OADS observation submit failed: {exc}")
         return None
+
+
+def filter_payload_for_unknown_oads_assets(
+    payload: Dict[str, Any],
+    oads_assets: Iterable[Dict[str, Any]],
+) -> tuple[Dict[str, Any], int]:
+    known_macs = set()
+    known_ips = set()
+    for profile in oads_assets:
+        for mac in _extract_profile_values(profile, "mac"):
+            known_macs.add(_normalize_mac(mac))
+        for ip in _extract_profile_values(profile, "ip"):
+            known_ips.add(str(ip))
+
+    kept = []
+    skipped = 0
+    for obs in payload.get("observations", []) or []:
+        mac = _normalize_mac(obs.get("mac")) if obs.get("mac") else None
+        ip = str(obs.get("ip")) if obs.get("ip") else None
+        if (mac and mac in known_macs) or (ip and ip in known_ips):
+            skipped += 1
+            continue
+        kept.append(obs)
+
+    filtered = dict(payload)
+    filtered["observations"] = kept
+    return filtered, skipped
+
+
+def submit_observations_in_batches(
+    client: OADSClient,
+    payload: Dict[str, Any],
+    *,
+    batch_size: int = 100,
+) -> Dict[str, Any]:
+    observations = list(payload.get("observations", []) or [])
+    if not observations:
+        return {
+            "submitted": True,
+            "submitted_observations": 0,
+            "failed": False,
+            "responses": [],
+            "error": None,
+        }
+
+    responses = []
+    submitted = 0
+    for index in range(0, len(observations), max(1, batch_size)):
+        batch_payload = dict(payload)
+        batch_payload["observations"] = observations[index : index + batch_size]
+        try:
+            responses.append(client.submit_observations(batch_payload))
+            submitted += len(batch_payload["observations"])
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+            return {
+                "submitted": submitted > 0,
+                "submitted_observations": submitted,
+                "failed": True,
+                "responses": responses,
+                "error": str(exc),
+            }
+
+    return {
+        "submitted": True,
+        "submitted_observations": submitted,
+        "failed": False,
+        "responses": responses,
+        "error": None,
+    }
 
 
 def fetch_oads_assets(client: OADSClient) -> List[Dict[str, Any]]:
@@ -281,6 +507,13 @@ def _iter_comms(state: Any):
             yield comm
 
 
+def _iter_evidence(state: Any):
+    evidence = getattr(state, "evidence", []) or []
+    for item in evidence:
+        if isinstance(item, dict):
+            yield item
+
+
 def _iter_values(value: Any):
     if value is None:
         return []
@@ -295,6 +528,39 @@ def _iter_values(value: Any):
     return [value]
 
 
+def _dedupe_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = set()
+    deduped = []
+    for obs in observations:
+        key = (
+            obs.get("timestamp"),
+            _normalize_mac(obs.get("mac")) if obs.get("mac") else None,
+            obs.get("ip"),
+            obs.get("protocol"),
+            obs.get("field"),
+            obs.get("value"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(obs)
+    return deduped
+
+
+def _limit_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    limit = _max_observations()
+    if limit <= 0 or len(observations) <= limit:
+        return observations
+    return observations[:limit]
+
+
+def _max_observations() -> int:
+    try:
+        return int(os.environ.get("GUPPY_OADS_MAX_OBSERVATIONS", "1500"))
+    except ValueError:
+        return 1500
+
+
 def _observation(
     *,
     asset: Dict[str, Any],
@@ -302,20 +568,25 @@ def _observation(
     protocol: str,
     field: str,
     value: Any,
+    raw_context: Optional[Dict[str, Any]] = None,
+    timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     ids = asset.get("identifiers", {}) or {}
+    context = {
+        "guppy_asset_id": str(asset.get("asset_id") or asset_id),
+        "evidence_layer": ",".join(sorted(asset.get("_evidence_layers", set()) or [])),
+        "source": "guppy-ics",
+    }
+    if raw_context:
+        context.update({k: v for k, v in raw_context.items() if v is not None})
     return {
-        "timestamp": None,
+        "timestamp": timestamp,
         "mac": _first(ids.get("mac")),
         "ip": _first(ids.get("ip")),
         "protocol": str(protocol),
         "field": str(field),
         "value": _stringify(value),
-        "raw_context": {
-            "guppy_asset_id": str(asset.get("asset_id") or asset_id),
-            "evidence_layer": ",".join(sorted(asset.get("_evidence_layers", set()) or [])),
-            "source": "guppy-ics",
-        },
+        "raw_context": context,
     }
 
 
