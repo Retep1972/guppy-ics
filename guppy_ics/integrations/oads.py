@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
+from guppy_ics.core.addressing import classify_ip_address
+
 
 SAFE_ASSET_METADATA_FIELDS = {
     "station_name",
@@ -16,6 +18,7 @@ SAFE_ASSET_METADATA_FIELDS = {
     "vendor_id",
     "order_number",
     "firmware_version",
+    "hardware_version",
 }
 
 SAFE_COMM_METADATA_FIELDS = {
@@ -54,9 +57,60 @@ HIGH_VALUE_EVIDENCE_FIELDS = {
         "relates_to",
         "scope",
     },
+    "lldp": {
+        "chassis_id",
+        "port_id",
+        "port_description",
+        "system_name",
+        "system_description",
+        "system_capabilities",
+        "management_address",
+        "order_number",
+        "firmware_version",
+        "hardware_version",
+    },
+    "cdp": {
+        "device_id",
+        "system_name",
+        "system_description",
+        "software_version",
+        "platform",
+        "model",
+        "port_id",
+        "capabilities",
+        "management_address",
+        "vtp_management_domain",
+        "cdp_version",
+        "ttl",
+    },
 }
 
 SERVICE_EVIDENCE_TYPES = {"tcp_service_observation", "udp_service_observation"}
+NON_ASSET_ENDPOINT_FIELDS = {"dst_ip", "destination_ip", "group"}
+CONTEXT_ONLY_EVIDENCE_FIELDS = {"matched_sdp"}
+
+LOW_VALUE_KNOWN_ASSET_FIELDS = {
+    "mac",
+    "ip",
+    "identity_link",
+    "observed_protocol",
+    "evidence_type",
+    "src_ip",
+    "dst_ip",
+    "src_mac",
+    "dst_mac",
+    "src_port",
+    "dst_port",
+    "server_port",
+    "transport",
+    "transport_protocol",
+    "scope",
+    "packet_count",
+    "byte_count",
+    "first_seen",
+    "last_seen",
+    "direction",
+}
 
 
 @dataclass
@@ -261,6 +315,7 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
             "source_asset": evidence.get("source_asset"),
             "destination_asset": evidence.get("destination_asset"),
             "source": "guppy-ics",
+            "evidence_attributes": _context_safe_attributes(attributes),
         }
 
         if evidence_type in SERVICE_EVIDENCE_TYPES:
@@ -304,6 +359,8 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
         allowed_fields = HIGH_VALUE_EVIDENCE_FIELDS.get(str(evidence_type), set())
         for field, value in sorted(attributes.items()):
             if allowed_fields and field not in allowed_fields:
+                continue
+            if _context_only_evidence_field(field, value):
                 continue
             observations.append(
                 _observation(
@@ -352,7 +409,8 @@ def filter_payload_for_unknown_oads_assets(
     for obs in payload.get("observations", []) or []:
         mac = _normalize_mac(obs.get("mac")) if obs.get("mac") else None
         ip = str(obs.get("ip")) if obs.get("ip") else None
-        if (mac and mac in known_macs) or (ip and ip in known_ips):
+        known_asset = (mac and mac in known_macs) or (ip and ip in known_ips)
+        if known_asset and _skip_known_asset_observation(obs):
             skipped += 1
             continue
         kept.append(obs)
@@ -360,6 +418,25 @@ def filter_payload_for_unknown_oads_assets(
     filtered = dict(payload)
     filtered["observations"] = kept
     return filtered, skipped
+
+
+def _skip_known_asset_observation(obs: Dict[str, Any]) -> bool:
+    field = str(obs.get("field") or "").lower()
+    protocol = str(obs.get("protocol") or "").lower()
+    if field in LOW_VALUE_KNOWN_ASSET_FIELDS:
+        return True
+    if protocol in {"tcp", "udp"} and field not in {
+        "server",
+        "hostname",
+        "service_name",
+        "product_name",
+        "manufacturer",
+        "model",
+        "firmware_version",
+        "serial_number",
+    }:
+        return True
+    return False
 
 
 def submit_observations_in_batches(
@@ -434,7 +511,7 @@ def debug_payload_preview(payload: Any, *, max_chars: int = 4000) -> str:
     except TypeError:
         text = str(payload)
 
-    if len(text) <= max_chars:
+    if max_chars <= 0 or len(text) <= max_chars:
         return text
     return text[:max_chars] + "\n... truncated ..."
 
@@ -490,6 +567,26 @@ def oads_match_key_counts(oads_assets: Iterable[Dict[str, Any]]) -> Dict[str, in
         for ip in _extract_profile_values(profile, "ip"):
             ips.add(str(ip))
     return {"mac": len(macs), "ip": len(ips)}
+
+
+def _context_only_evidence_field(field: str, value: Any) -> bool:
+    field = str(field)
+    if field in CONTEXT_ONLY_EVIDENCE_FIELDS:
+        return True
+    if field not in NON_ASSET_ENDPOINT_FIELDS:
+        return False
+    if isinstance(value, (dict, list, tuple, set)):
+        return True
+    return bool(classify_ip_address(str(value)))
+
+
+def _context_safe_attributes(attributes: Dict[str, Any]) -> Dict[str, Any]:
+    safe = {}
+    for key, value in (attributes or {}).items():
+        if value in (None, "", [], {}):
+            continue
+        safe[str(key)] = _plain(value)
+    return safe
 
 
 def _iter_assets(state: Any):

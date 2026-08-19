@@ -5,7 +5,9 @@ from typing import List, Dict
 from guppy_ics.protocols.base import ProtocolPlugin
 from guppy_ics.protocols.discovery import DiscoveryEvidencePlugin
 from guppy_ics.protocols.http import HTTPPlugin
+from guppy_ics.protocols.neighbor import CDPPlugin, LLDPPlugin
 from guppy_ics.protocols.modbus import ModbusPlugin
+from guppy_ics.protocols.network_audio import NetworkAudioPlugin
 from guppy_ics.protocols.onvif import ONVIFPlugin
 from guppy_ics.protocols.profinet import ProfinetPlugin
 from guppy_ics.protocols.arp import ArpPlugin
@@ -29,6 +31,9 @@ def _all_plugins() -> List[ProtocolPlugin]:
         ModbusPlugin(),
         ONVIFPlugin(),
         HTTPPlugin(),
+        NetworkAudioPlugin(),
+        LLDPPlugin(),
+        CDPPlugin(),
         ProfinetPlugin(),
         ArpPlugin(),
         L2L3LinkerPlugin(),
@@ -47,7 +52,7 @@ def _all_plugins() -> List[ProtocolPlugin]:
 
 def load_plugins(enabled: List[str] | None = None) -> List[ProtocolPlugin]:
     plugins = _all_plugins()
-    infrastructure = {"arp", "l2l3", "transport", "ipv6"}
+    infrastructure = {"arp", "l2l3", "transport", "ipv6", "lldp", "cdp"}
 
     if enabled is None:
         return plugins
@@ -69,7 +74,7 @@ def load_plugins(enabled: List[str] | None = None) -> List[ProtocolPlugin]:
 
 
 def available_protocols():
-    infrastructure = {"arp", "l2l3", "transport", "ipv6"}
+    infrastructure = {"arp", "l2l3", "transport", "ipv6", "lldp", "cdp"}
 
     return [
         {

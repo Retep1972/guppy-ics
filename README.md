@@ -27,6 +27,8 @@ security practitioners.
   - Modbus TCP
   - HTTP banners and metadata
   - ONVIF / RTSP cameras
+  - SIP, SDP, RTP/RTCP, IGMP, and PTP network-audio evidence
+  - LLDP and Cisco Discovery Protocol switch identity
   - OPC UA
   - IEC 60870-5-104
   - DHCP, DNS, LLMNR, mDNS, NetBIOS, SSDP, and WS-Discovery evidence
@@ -371,9 +373,10 @@ accepted before a failure.
 Guppy sends passive evidence only. Current evidence includes asset identifiers,
 generic TCP/UDP service observations, DHCP host/vendor options, DNS/LLMNR/mDNS
 records, NetBIOS service evidence, SSDP headers, WS-Discovery XML fields,
-HTTP/ONVIF/RTSP metadata, and OT protocol observations where Guppy can parse
-raw values. OADS remains responsible for vendor, model, device type, OS, and
-confidence inference.
+HTTP/ONVIF/RTSP metadata, LLDP/CDP switch identity fields, SIP/SDP/RTP/RTCP
+network-audio observations, IGMP multicast membership, PTP timing evidence, and
+OT protocol observations where Guppy can parse raw values. OADS remains
+responsible for vendor, model, device type, OS, and confidence inference.
 
 Communications and topology prefer the most specific observed protocol. For
 example, if Modbus TCP is detected, Guppy shows the communication as `modbus`

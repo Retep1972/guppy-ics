@@ -74,19 +74,23 @@
                 <li>Matched profiles: {{ oads_status.matched | default(0) }}</li>
             </ul>
 
-            {% if oads_status.submit_response_preview or oads_status.assets_response_preview %}
+            {% if oads_status.submit_response_preview or oads_status.assets_response_preview or oads_status.preflight_assets_response_preview %}
                 <h3>OADS response preview</h3>
                 {% if oads_status.health_response_preview %}
                     <strong>GET /health response</strong>
-                    <pre>{{ oads_status.health_response_preview }}</pre>
+                    <pre class="oads-json-output">{{ oads_status.health_response_preview }}</pre>
+                {% endif %}
+                {% if oads_status.preflight_assets_response_preview %}
+                    <strong>GET /api/v1/assets preflight response</strong>
+                    <pre class="oads-json-output">{{ oads_status.preflight_assets_response_preview }}</pre>
                 {% endif %}
                 {% if oads_status.submit_response_preview %}
                     <strong>POST /api/v1/observations response</strong>
-                    <pre>{{ oads_status.submit_response_preview }}</pre>
+                    <pre class="oads-json-output">{{ oads_status.submit_response_preview }}</pre>
                 {% endif %}
                 {% if oads_status.assets_response_preview %}
                     <strong>GET /api/v1/assets response</strong>
-                    <pre>{{ oads_status.assets_response_preview }}</pre>
+                    <pre class="oads-json-output">{{ oads_status.assets_response_preview }}</pre>
                 {% endif %}
             {% endif %}
         </details>
@@ -162,6 +166,32 @@
                         {% if not loop.last %}|{% endif %}
                     {% endfor %}
                 </span>
+            {% endif %}
+
+            {% if asset.identity_summary %}
+                <br>
+                <span class="muted">
+                    Identity evidence:
+                    {% for item in asset.identity_summary %}
+                        <strong>{{ item.label }}</strong>: {{ item.value }}
+                        {% if not loop.last %}|{% endif %}
+                    {% endfor %}
+                </span>
+            {% endif %}
+
+            {% if asset.identity_json or asset.oads_profile_json %}
+                <br>
+                <details class="asset-details">
+                    <summary>Asset details</summary>
+                    {% if asset.identity_json %}
+                        <strong>Passive identity evidence</strong>
+                        <pre class="asset-json-output">{{ asset.identity_json }}</pre>
+                    {% endif %}
+                    {% if asset.oads_profile_json %}
+                        <strong>OADS profile</strong>
+                        <pre class="asset-json-output">{{ asset.oads_profile_json }}</pre>
+                    {% endif %}
+                </details>
             {% endif %}
         </li>
     {% endfor %}

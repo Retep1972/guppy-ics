@@ -120,7 +120,9 @@ class ProfinetPlugin(ProtocolPlugin):
             if frame_id not in (0xFEFE, 0xFEFD):
                 return
 
-            offset = 10  # fixed DCP header length
+            # FrameID(2), service_id(1), service_type(1), xid(4),
+            # response_delay(2), dcp_data_length(2), then option blocks.
+            offset = 12
             station_name = None
 
             while offset + 4 <= len(payload):

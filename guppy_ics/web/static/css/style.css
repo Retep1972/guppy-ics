@@ -227,12 +227,14 @@ pre {
 }
 
 .oads-details,
-.evidence-details {
+.evidence-details,
+.asset-details {
     margin: 0.75em 0 1em 0;
 }
 
 .oads-details summary,
-.evidence-details summary {
+.evidence-details summary,
+.asset-details summary {
     display: inline-block;
     cursor: pointer;
     padding: 4px 10px;
@@ -243,8 +245,19 @@ pre {
 }
 
 .oads-details[open] summary,
-.evidence-details[open] summary {
+.evidence-details[open] summary,
+.asset-details[open] summary {
     margin-bottom: 0.75em;
+}
+
+.oads-json-output,
+.asset-json-output {
+    max-height: 70vh;
+    overflow: auto;
+    white-space: pre;
+    border: 1px solid #1f7a3a;
+    padding: 0.75em;
+    background: #020602;
 }
 
 /* ---- Topology tree ---- */

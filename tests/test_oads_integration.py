@@ -208,6 +208,7 @@ def test_payload_filter_skips_observations_for_assets_already_known_to_oads():
         "capture_id": "capture-1",
         "observations": [
             {"mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.10", "protocol": "modbus", "field": "mac", "value": "AA"},
+            {"mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.10", "protocol": "http", "field": "server", "value": "SIMATIC HMI"},
             {"mac": "00:11:22:33:44:55", "ip": "192.168.1.20", "protocol": "dhcp", "field": "hostname", "value": "new"},
         ],
     }
@@ -218,7 +219,7 @@ def test_payload_filter_skips_observations_for_assets_already_known_to_oads():
     )
 
     assert skipped == 1
-    assert filtered["observations"] == [payload["observations"][1]]
+    assert filtered["observations"] == [payload["observations"][1], payload["observations"][2]]
 
 
 def test_batched_submit_stops_after_first_failed_batch():

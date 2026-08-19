@@ -448,9 +448,10 @@ class AnalysisState:
             ips = ids.get("ip", set())
             ipv6s = ids.get("ipv6", set())
 
-            # Likely VM
-            if len(macs) > 1:
-                hints.add("likely_vm")
+            # Multiple MACs can be normal for switches, routers, teamed NICs,
+            # and virtual hosts. Keep the hint neutral unless stronger evidence exists.
+            if len(macs) > 1 and asset.get("role") != "network_device":
+                hints.add("multi_mac")
 
             # Multi-interface / multi-stack
             if len(ips) > 1 or len(ipv6s) > 1:

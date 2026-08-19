@@ -87,6 +87,64 @@ def primary_label(asset: dict) -> str:
 
     return asset.get("identifier", asset.get("asset_id"))
 
+
+def asset_topology_display(asset: dict | None) -> str:
+    """
+    Human-facing topology label.
+    Prefer a device name when known; otherwise show device type/model/role,
+    then include the best stable identifier in parentheses.
+    """
+    if not asset:
+        return "unknown"
+
+    identifiers = asset.get("identifiers", {}) or {}
+    profile = asset.get("oads_profile") or {}
+    metadata = asset.get("metadata", {}) or {}
+
+    name = _first_present(
+        metadata.get("station_name"),
+        metadata.get("hostname"),
+        profile.get("name") if isinstance(profile, dict) else None,
+        profile.get("hostname") if isinstance(profile, dict) else None,
+        _first_identifier(identifiers, "hostname"),
+    )
+    device_type = _first_present(
+        profile.get("device_type") if isinstance(profile, dict) else None,
+        profile.get("model") if isinstance(profile, dict) else None,
+        asset.get("role"),
+    )
+    fallback = asset.get("label") or asset.get("identifier") or asset.get("asset_id")
+    label = name or _humanize_device_type(device_type) or fallback
+
+    identifier = (
+        _first_identifier(identifiers, "ip")
+        or _first_identifier(identifiers, "ipv6")
+        or _first_identifier(identifiers, "mac")
+    )
+    if identifier and str(identifier) != str(label):
+        return f"{label} ({identifier})"
+    return str(label)
+
+
+def _first_identifier(identifiers: dict, key: str):
+    values = identifiers.get(key)
+    if not values:
+        return None
+    return sorted(values)[0]
+
+
+def _first_present(*values):
+    for value in values:
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _humanize_device_type(value):
+    if not value:
+        return None
+    return str(value).replace("_", " ")
+
 # helper function
 def normalize_function(func: str | None) -> str | None:
     if not func:
@@ -244,33 +302,14 @@ def build_topology_from_communications(communications, state):
     """
     Build adjacency lists (topology) from communications already filtered for UI.
     """
-    def asset_display(asset):
-        """
-        station_name (ip) | ip | mac
-        """
-        if not asset:
-            return "unknown"
-
-        label = asset.get("label") or asset.get("identifier") or asset.get("asset_id")
-
-        ids = asset.get("identifiers", {})
-        ips = ids.get("ip")
-        macs = ids.get("mac")
-
-        if ips:
-            return f"{label} ({sorted(ips)[0]})"
-        if macs:
-            return f"{label} ({sorted(macs)[0]})"
-        return label
-
     topology = {}
 
     for c in communications:
         src_asset = state.assets.get(c["src_asset_id"])
         dst_asset = state.assets.get(c["dst_asset_id"])
 
-        src_disp = asset_display(src_asset)
-        dst_disp = asset_display(dst_asset)
+        src_disp = asset_topology_display(src_asset)
+        dst_disp = asset_topology_display(dst_asset)
 
         proto = c.get("protocol", "unknown")
         func = c.get("function")
@@ -286,8 +325,38 @@ def build_topology_from_communications(communications, state):
 
         topology.setdefault(src_disp, set()).add(f"{edge_label} → {dst_disp}")
 
+    for item in getattr(state, "evidence", []) or []:
+        attrs = item.get("attributes", {}) or {}
+        src_asset = state.assets.get(item.get("source_asset"))
+        src_disp = asset_topology_display(src_asset)
+        if src_disp == "unknown":
+            continue
+
+        if item.get("type") == "sdp_media" and attrs.get("destination_ip"):
+            destination = _media_endpoint(attrs.get("destination_ip"), attrs.get("destination_port"))
+            media = attrs.get("media_type") or "media"
+            transport = attrs.get("transport") or "sdp"
+            topology.setdefault(src_disp, set()).add(
+                f"sdp / advertises {media} / {transport} -> {destination}"
+            )
+        elif item.get("type") == "rtp_stream" and attrs.get("scope") == "multicast":
+            destination = _media_endpoint(attrs.get("dst_ip"), attrs.get("dst_port"))
+            topology.setdefault(src_disp, set()).add(f"rtp / sends_rtp -> {destination}")
+        elif item.get("type") == "igmp_membership" and attrs.get("group"):
+            event = attrs.get("event")
+            if event in {"membership_report", "membership_report_v3"}:
+                topology.setdefault(src_disp, set()).add(f"igmp / joins_multicast -> {attrs['group']}")
+            elif event == "leave_group":
+                topology.setdefault(src_disp, set()).add(f"igmp / leaves_multicast -> {attrs['group']}")
+
     # Normalize for Jinja
     return {k: sorted(v) for k, v in topology.items()}
+
+
+def _media_endpoint(ip_value, port_value=None) -> str:
+    if port_value not in (None, ""):
+        return f"{ip_value}:{port_value}"
+    return str(ip_value)
 
 @router.get("/upload/result", response_class=HTMLResponse)
 def upload_result(request: Request, bus_id: str):
@@ -324,6 +393,11 @@ def upload_result(request: Request, bus_id: str):
         profile = a.get("oads_profile")
         if isinstance(profile, dict):
             a["oads_summary"] = summarize_oads_profile(profile)
+            a["oads_profile_json"] = debug_payload_preview(profile, max_chars=0)
+        a["identity_summary"] = summarize_asset_identity(a)
+        raw_identity = a.get("metadata", {}).get("raw_protocol_identity")
+        if isinstance(raw_identity, dict) and raw_identity:
+            a["identity_json"] = debug_payload_preview(raw_identity, max_chars=0)
 
         if is_broadcast_identifier(label):
             a["role"] = "broadcast"
@@ -632,6 +706,7 @@ def run_oads_enrichment(
         preflight_profiles = normalize_oads_assets_payload(preflight_assets_response)
         status["preflight_assets"] = True
         status["preflight_assets_count"] = len(preflight_profiles)
+        status["preflight_assets_response_preview"] = debug_payload_preview(preflight_assets_response, max_chars=0)
         status["oads_keys"] = oads_match_key_counts(preflight_profiles)
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
         status["preflight_assets_error"] = str(exc)
@@ -650,7 +725,7 @@ def run_oads_enrichment(
             submit_payload,
             batch_size=_oads_batch_size(),
         )
-        status["submit_response_preview"] = debug_payload_preview(submit_result)
+        status["submit_response_preview"] = debug_payload_preview(submit_result, max_chars=0)
         status["submitted"] = True
         status["submitted_observations"] = submit_result["submitted_observations"]
         if submit_result.get("failed"):
@@ -674,7 +749,7 @@ def run_oads_enrichment(
 
     try:
         assets_response = client.get_assets()
-        status["assets_response_preview"] = debug_payload_preview(assets_response)
+        status["assets_response_preview"] = debug_payload_preview(assets_response, max_chars=0)
         profiles = normalize_oads_assets_payload(assets_response)
         status["fetched"] = True
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
@@ -744,6 +819,20 @@ def _evidence_summary(item):
         "dst_port",
         "scope",
         "server",
+        "method",
+        "status_code",
+        "user_agent",
+        "call_id",
+        "media_type",
+        "destination_ip",
+        "destination_port",
+        "payload_types",
+        "ssrc",
+        "packet_count",
+        "group",
+        "event",
+        "message_type",
+        "clock_identity",
         "location",
     ):
         value = attrs.get(key)
@@ -778,6 +867,7 @@ def _empty_oads_status(state, *, base_url: str) -> dict:
         "preflight_assets": False,
         "preflight_assets_error": None,
         "preflight_assets_count": 0,
+        "preflight_assets_response_preview": None,
         "matched": 0,
         "guppy_keys": guppy_match_key_counts(state),
         "oads_keys": {"mac": 0, "ip": 0},
@@ -805,7 +895,7 @@ def _oads_skip_known_assets() -> bool:
     return os.environ.get("GUPPY_OADS_SKIP_KNOWN_ASSETS", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 def summarize_oads_profile(profile: dict) -> dict:
-    fields = [
+    preferred_fields = [
         "name",
         "hostname",
         "vendor",
@@ -816,8 +906,83 @@ def summarize_oads_profile(profile: dict) -> dict:
         "embedded_os",
         "firmware",
         "firmware_version",
+        "hardware_version",
+        "software_version",
+        "product_name",
+        "order_number",
+        "serial_number",
     ]
-    return {field: profile.get(field) for field in fields if profile.get(field)}
+    summary = {}
+    for field in preferred_fields:
+        if profile.get(field):
+            summary[field] = _short_value(profile.get(field), max_len=180)
+
+    for path, value in _flatten_profile_fields(profile):
+        field = path[-1]
+        if field not in preferred_fields or field in summary:
+            continue
+        summary[field] = _short_value(value, max_len=180)
+
+    return summary
+
+
+def summarize_asset_identity(asset: dict) -> list[dict]:
+    metadata = asset.get("metadata", {}) or {}
+    rows = []
+    seen = set()
+
+    def add(label, value):
+        if value in (None, "", [], {}):
+            return
+        key = (label, str(value))
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append({"label": label, "value": _short_value(value, max_len=240)})
+
+    for field in (
+        "station_name",
+        "hostname",
+        "order_number",
+        "firmware_version",
+        "hardware_version",
+        "sysObjectID",
+    ):
+        add(field.replace("_", " "), metadata.get(field))
+
+    raw_identity = metadata.get("raw_protocol_identity")
+    if isinstance(raw_identity, dict):
+        for protocol, fields in sorted(raw_identity.items()):
+            if not isinstance(fields, dict):
+                continue
+            for field in (
+                "system_name",
+                "device_id",
+                "station_name",
+                "model",
+                "platform",
+                "order_number",
+                "firmware_version",
+                "hardware_version",
+                "management_address",
+                "port_id",
+                "system_description",
+                "software_version",
+            ):
+                add(f"{protocol} {field.replace('_', ' ')}", fields.get(field))
+
+    return rows
+
+
+def _flatten_profile_fields(value, path=()):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from _flatten_profile_fields(child, path + (str(key),))
+    elif isinstance(value, list):
+        for item in value[:20]:
+            yield from _flatten_profile_fields(item, path)
+    elif value not in (None, ""):
+        yield path, value
 
 def _env_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}

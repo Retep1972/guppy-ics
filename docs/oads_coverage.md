@@ -18,11 +18,18 @@ Audit baseline: current local OADS README and reference rules.
 | SSDP/UPnP | `server`, `usn`, `st`, `nt`, `location`, `host`, `cache-control` | bounded header extraction from visible SSDP payloads | SUPPORTED | Payload body parsing is not implemented. |
 | ONVIF / WS-Discovery | `manufacturer`, `model`, `firmware_version`, `serial_number`, `hardware_id`, `Types`, `Scopes`, `XAddrs`, message IDs | ONVIF HTTP/XML markers, WS-Discovery fields, GetDeviceInformation response fields | SUPPORTED | Only visible/unencrypted XML payloads; HTTPS ONVIF cannot be decoded passively. |
 | RTSP | `server`, `media_type`, `session`, `request_uri`, `user_agent` | RTSP control/media presence, request URI, server, session, user agent, media type | SUPPORTED | RTP codec details are not decoded beyond generic video media hint. |
+| SIP | methods, status, Request-URI, From/To/Contact, Via, Call-ID, CSeq, User-Agent, Server, Allow/Supported/Require, Event, realms | visible UDP/TCP SIP on 5060 and syntax-based nonstandard ports; REGISTER/INVITE/session/behavior evidence | SUPPORTED | SIP over TLS is identified only as encrypted signalling; no decryption. |
+| SDP | media type, connection address, RTP transport, payload types, rtpmap codecs, direction, ptime, rtcp, SRTP indication | SDP bodies inside SIP are parsed into media-session evidence | SUPPORTED | Standalone SDP outside SIP/RTSP is not currently scanned. |
+| RTP | SSRC, payload type, sequence/timestamp range, packet/byte count, multicast/unicast, SDP correlation | conservative UDP RTP aggregation after multiple consistent packets | SUPPORTED | No audio reconstruction; no dynamic codec inference without SDP. |
+| RTCP | packet type, SSRC, report count | common RTCP SR/RR/SDES/BYE/APP evidence | PARTIAL | SDES CNAME extraction is not implemented yet. |
+| IGMP | membership query/report/leave, group, version | IGMPv1/v2-style and basic IGMPv3 report evidence; multicast groups remain special addresses | PARTIAL | IGMPv3 source-filter records are not deeply decoded yet. |
+| PTP / IEEE 1588 | message type, version, domain, clock identity, source port, sequence ID | UDP 319/320 PTP evidence | PARTIAL | Ethernet-layer PTP and grandmaster relationship inference are not implemented yet. |
 | Generic TCP/UDP | ports, scope, packet/byte counts, MAC/IP endpoints, first/last seen | bounded per-flow service observations | SUPPORTED | No TCP stream reassembly; service inference remains in OADS. |
 | Windows: NTLM/Kerberos/SMB/RDP | workstation/domain/realm/SPN/dialect/native OS/hostname/vendor class | none | MISSING | No SMB/NTLM/Kerberos/RDP parsers yet. |
 | TLS | certificate CN/SAN/org/issuer/fingerprint | none | MISSING | No TLS certificate parser yet. |
 | SSH | `server_banner`, `client_banner` | none | MISSING | No SSH banner parser yet. |
-| LLDP | chassis/port/system/management/capabilities/OUI TLVs | none | MISSING | No LLDP parser yet. |
+| LLDP | chassis/port/system/management/capabilities/OUI TLVs | chassis ID, port ID/description, system name/description, capabilities, management address, Siemens order/firmware/hardware values when present in raw TLVs | SUPPORTED | More vendor-specific TLVs can be added as examples appear. |
+| Cisco Discovery Protocol | device ID, platform/model, software version, management address, port ID, capabilities | device ID/system name, platform/model, software/system description, management address, port ID, capabilities, VTP domain | SUPPORTED | CDP TLV parsing is intentionally bounded to passive identity fields. |
 | BACnet | `vendor_id` if supported by OADS | none | MISSING | No BACnet parser yet. |
 
 Payload semantics:
@@ -31,5 +38,6 @@ Payload semantics:
 - Each observation includes `timestamp`, `mac`, `ip`, `protocol`, `field`, `value`, and `raw_context`.
 - Communication-derived observations now include `source_port`, `destination_port`, `transport`, and `function` in `raw_context` when available.
 - Discovery and transport evidence is serialized as additional observations using the same OADS `field`/`value` envelope, with `evidence_type` and asset provenance in `raw_context`.
+- SIP, SDP, RTP/RTCP, IGMP, and PTP evidence is serialized through the same generic evidence path for OADS enrichment.
 - Broadcast, multicast, unspecified, and obvious subnet-directed broadcast addresses are tracked separately from ordinary discovered assets.
 - Guppy does not submit inferred `vendor`, `model`, `device_type`, `os`, or `confidence` values as authoritative facts.
