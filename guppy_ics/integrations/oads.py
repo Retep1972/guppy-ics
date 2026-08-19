@@ -330,7 +330,7 @@ def build_observations_payload(state: Any, capture_id: str) -> Dict[str, Any]:
             service_seen.add(service_key)
             for field in ("evidence_type", "dst_port", "server_port", "scope", "transport_protocol"):
                 value = evidence_type if field == "evidence_type" else attributes.get(field)
-                if value in (None, "", [], {}):
+                if _is_empty_value(value):
                     continue
                 observations.append(
                     _observation(
@@ -583,7 +583,7 @@ def _context_only_evidence_field(field: str, value: Any) -> bool:
 def _context_safe_attributes(attributes: Dict[str, Any]) -> Dict[str, Any]:
     safe = {}
     for key, value in (attributes or {}).items():
-        if value in (None, "", [], {}):
+        if _is_empty_value(value):
             continue
         safe[str(key)] = _plain(value)
     return safe
@@ -630,18 +630,24 @@ def _dedupe_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, A
     deduped = []
     for obs in observations:
         key = (
-            obs.get("timestamp"),
+            _hashable_value(obs.get("timestamp")),
             _normalize_mac(obs.get("mac")) if obs.get("mac") else None,
-            obs.get("ip"),
-            obs.get("protocol"),
-            obs.get("field"),
-            obs.get("value"),
+            _hashable_value(obs.get("ip")),
+            _hashable_value(obs.get("protocol")),
+            _hashable_value(obs.get("field")),
+            _hashable_value(obs.get("value")),
         )
         if key in seen:
             continue
         seen.add(key)
         deduped.append(obs)
     return deduped
+
+
+def _hashable_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    return json.dumps(_plain(value), sort_keys=True, default=str)
 
 
 def _limit_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -704,6 +710,10 @@ def _plain(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_plain(v) for v in value]
     return value
+
+
+def _is_empty_value(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
 
 def _normalize_mac(value: Any) -> str:

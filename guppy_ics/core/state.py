@@ -459,5 +459,4 @@ class AnalysisState:
 
             if hints:
                 asset.setdefault("metadata", {})["inference_hints"] = sorted(hints)
-                print("HINTS:", asset.get("identifier"), sorted(hints))
 

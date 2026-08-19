@@ -135,7 +135,7 @@ def _first_identifier(identifiers: dict, key: str):
 
 def _first_present(*values):
     for value in values:
-        if value not in (None, "", [], {}):
+        if not _is_empty_value(value):
             return value
     return None
 
@@ -836,7 +836,7 @@ def _evidence_summary(item):
         "location",
     ):
         value = attrs.get(key)
-        if value in (None, "", [], {}):
+        if _is_empty_value(value):
             continue
         parts.append(f"{key}: {_short_value(value)}")
     return " | ".join(parts) if parts else _short_value(attrs)
@@ -932,7 +932,7 @@ def summarize_asset_identity(asset: dict) -> list[dict]:
     seen = set()
 
     def add(label, value):
-        if value in (None, "", [], {}):
+        if _is_empty_value(value):
             return
         key = (label, str(value))
         if key in seen:
@@ -981,8 +981,12 @@ def _flatten_profile_fields(value, path=()):
     elif isinstance(value, list):
         for item in value[:20]:
             yield from _flatten_profile_fields(item, path)
-    elif value not in (None, ""):
+    elif not _is_empty_value(value):
         yield path, value
+
+
+def _is_empty_value(value) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
 def _env_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}

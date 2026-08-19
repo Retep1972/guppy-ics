@@ -241,3 +241,32 @@ def test_batched_submit_stops_after_first_failed_batch():
     assert result["submitted_observations"] == 2
     assert result["failed"] is True
     assert result["error"] == "slow"
+
+
+def test_payload_conversion_handles_nested_evidence_without_unhashable_dict():
+    state = AnalysisState()
+    asset_id = state.register_asset("192.168.1.10", protocol="rtp", evidence_layer="l3")
+    state.register_evidence(
+        evidence_type="rtp_stream",
+        protocol="rtp",
+        source_asset=asset_id,
+        attributes={
+            "ssrc": 123,
+            "payload_types": [8],
+            "matched_sdp": {
+                "destination_ip": "239.10.20.5",
+                "destination_port": 5004,
+                "codecs": [{"payload_type": 8, "name": "PCMA"}],
+            },
+        },
+    )
+
+    payload = build_observations_payload(state, "nested")
+
+    assert payload["observations"]
+    assert not any(obs["field"] == "matched_sdp" for obs in payload["observations"])
+    assert any(
+        obs["raw_context"]["evidence_attributes"]["matched_sdp"]["destination_ip"] == "239.10.20.5"
+        for obs in payload["observations"]
+        if obs["field"] == "evidence_type"
+    )
