@@ -9,8 +9,9 @@ router = APIRouter()
 @router.get("/calibration", response_class=HTMLResponse)
 def calibration_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "calibration.html",
-        {"request": request}
+        {"request": request},
     )
 
 
@@ -27,11 +28,12 @@ def run_calibration(request: Request):
     communications = list(state.communications.values())
 
     return templates.TemplateResponse(
+        request,
         "calibration_result.html",
         {
             "request": request,
             "summary": state.summary(),
             "assets": assets,
             "communications": communications,
-        }
+        },
     )

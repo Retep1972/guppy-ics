@@ -7,6 +7,7 @@ router = APIRouter()
 @router.get("/help", response_class=HTMLResponse)
 def help_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "help.html",
         {"request": request},
     )

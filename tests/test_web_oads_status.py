@@ -31,10 +31,12 @@ def test_missing_oads_config_status_renders_result_template():
         base_url="",
     )
 
+    request = _request()
     response = templates.TemplateResponse(
+        request,
         "upload_result.html",
         {
-            "request": _request(),
+            "request": request,
             "summary": state.summary(),
             "assets": [],
             "communications": [],

@@ -156,6 +156,7 @@ def normalize_function(func: str | None) -> str | None:
 def upload_page(request: Request):
     oads_context = _oads_template_context()
     return templates.TemplateResponse(
+        request,
         "upload.html",
         {
             "request": request,
@@ -210,6 +211,7 @@ async def run_upload(request: Request, pcap: UploadFile = File(...)):
     threading.Thread(target=background_analysis, daemon=True).start()
 
     return templates.TemplateResponse(
+        request,
         "upload_progress.html",
         {
             "request": request,
@@ -365,6 +367,7 @@ def upload_result(request: Request, bus_id: str):
     if not state:
         oads_context = _oads_template_context()
         return templates.TemplateResponse(
+            request,
             "upload.html",
             {
                 "request": request,
@@ -509,6 +512,7 @@ def upload_result(request: Request, bus_id: str):
         a["visibility_color"] = color
 
     return templates.TemplateResponse(
+        request,
         "upload_result.html",
         {
             "request": request,
