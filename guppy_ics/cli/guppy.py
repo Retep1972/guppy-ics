@@ -26,6 +26,8 @@ from guppy_ics.integrations.oads import (
     oads_match_key_counts,
     submit_observations_in_batches,
 )
+from guppy_ics.segmentation import assess_segmentation, write_segmentation_outputs
+from guppy_ics.segmentation.report import render_text_summary
 from collections import defaultdict
 
 TRANSPORT_PROTOCOLS = {"ip", "ipv4", "ipv6", "tcp", "udp"}
@@ -489,6 +491,31 @@ def cmd_firewall_csv(args) -> int:
     return 0
 
 
+def cmd_segmentation(args) -> int:
+    pcap_path = Path(args.pcap)
+    if not pcap_path.exists():
+        print(f"ERROR: PCAP not found: {pcap_path}")
+        return 2
+
+    enabled = args.protocol if args.protocol else None
+    state = analyze_pcap(
+        str(pcap_path),
+        enabled_protocols=enabled,
+        limit=args.limit,
+        progress_cb=cli_progress,
+    )
+    print()
+
+    maybe_enhance_with_oads(state, capture_id=pcap_path.stem, args=args)
+
+    assessment = assess_segmentation(state)
+    outputs = write_segmentation_outputs(assessment, args.out_dir)
+    print(render_text_summary(assessment), end="")
+    print(f"[+] Wrote segmentation outputs: {Path(args.out_dir)}")
+    print(f"[+] HTML report: {outputs['segmentation_report']}")
+    return 0
+
+
 def cmd_live_assets(args):
     def render(state):
         return render_report_text(state, only="assets")
@@ -521,6 +548,17 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--oads-url", default=None,
                         help="OADS base URL (or GUPPY_OADS_URL, default http://localhost:8000)")
     replay.set_defaults(func=cmd_replay)
+
+    segmentation = sub.add_parser("segmentation", help="Assess observed OT network segmentation")
+    segmentation.add_argument("pcap", help="Path to .pcap/.pcapng")
+    segmentation.add_argument("--protocol", action="append", help="Enable only these protocols (repeatable)")
+    segmentation.add_argument("--limit", type=int, default=None, help="Limit number of packets processed")
+    segmentation.add_argument("--out-dir", default="segmentation", help="Directory for segmentation outputs")
+    segmentation.add_argument("--oads-enhance", action="store_true",
+                              help="Submit passive observations to OADS and attach matching enriched assets first")
+    segmentation.add_argument("--oads-url", default=None,
+                              help="OADS base URL (or GUPPY_OADS_URL, default http://localhost:8000)")
+    segmentation.set_defaults(func=cmd_segmentation)
 
     # Old. check if anything breaks
     #ingest = sub.add_parser("ingest", help="(alias) Replay a PCAP and generate a report")

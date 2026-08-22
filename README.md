@@ -387,6 +387,65 @@ protocol parser matched.
 Current field-level coverage is tracked in
 [`docs/oads_coverage.md`](docs/oads_coverage.md).
 
+## Segmentation Assessment
+
+Guppy can generate a practical OT/ICS segmentation assessment from passive
+asset evidence, optional OADS enrichment, and observed communications. It groups
+assets into candidate functional segments, analyzes communication paths across
+trust boundaries, reports segmentation findings, and produces candidate
+firewall intent for engineering review.
+
+Run it from the CLI:
+
+```bash
+guppy segmentation capture.pcap --out-dir segmentation
+```
+
+Run it with OADS enrichment first:
+
+```bash
+guppy segmentation capture.pcap --oads-enhance --oads-url http://localhost:8000
+```
+
+The Web UI result page also provides **Download segmentation assessment (ZIP)**.
+
+Generated files:
+
+```text
+segmentation/
+  segments.json
+  asset_membership.json
+  communication_matrix.csv
+  communication_matrix.json
+  findings.json
+  firewall_intent.csv
+  firewall_intent.json
+  segmentation_report.html
+  segmentation_summary.json
+```
+
+The report separates:
+
+- **Observed:** packet and identity evidence seen in the capture.
+- **Inferred:** functional category and candidate segment assignments.
+- **Recommended:** candidate controls and communication policy.
+
+Important limitations:
+
+- The assessment is passive and does not scan devices.
+- PCAP evidence only proves communication observed during the capture period.
+- Unseen communication may still be legitimate or required.
+- Guppy cannot prove that a VLAN, firewall, or enforcing boundary exists.
+- Unknown communication defaults to **REVIEW**, not automatic deny.
+- `DENY-CANDIDATE` firewall intent requires operational, engineering, and
+  safety validation before implementation.
+
+The methodology uses common OT segmentation concepts such as functional
+grouping, trust boundaries, controlled communication paths, least privilege,
+restricted data flow, and defence in depth. These concepts are compatible with
+IEC 62443 zone/conduit thinking, but this is not an IEC 62443 compliance
+checker and does not produce pass/fail compliance claims.
+
 ## Firewall Rule Generation
 
 Guppy can generate firewall intent directly from observed traffic.

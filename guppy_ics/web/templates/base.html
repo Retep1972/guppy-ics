@@ -1,10 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-<header class="topbar">
-    <nav class="nav">
-        <a href="/">Home</a>
-    </nav>
-</header>
 <head>
     <meta charset="UTF-8">
     <title>{% block title %}Guppy ICS{% endblock %}</title>
@@ -14,6 +9,16 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+<header class="topbar">
+    <a class="brand" href="/" aria-label="Guppy ICS home">
+        <span class="brand-logo" aria-hidden="true">🐟</span>
+        <span class="brand-name">Guppy ICS</span>
+    </a>
+    <nav class="nav">
+        <a href="/">Upload</a>
+        <a href="/help">Help</a>
+    </nav>
+</header>
 
 <main class="content">
     {% block content %}
@@ -22,9 +27,6 @@
 
 <footer class="footer">
     <span>Passive ICS Network Analysis</span>
-    <nav class="nav">
-        <a href="/help">Help</a>
-    </nav>
 </footer>
 
 </body>

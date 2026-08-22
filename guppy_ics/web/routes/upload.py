@@ -1,11 +1,11 @@
 from pathlib import Path
-import os, uuid, threading, shutil, csv
+import html, os, uuid, threading, shutil, csv, tempfile, zipfile
 import urllib.error
 from io import StringIO
 from collections import defaultdict
 
 from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from guppy_ics.analysis.run import analyze_pcap
 from guppy_ics.web.deps import templates
@@ -26,6 +26,8 @@ from guppy_ics.integrations.oads import (
     oads_match_key_counts,
     submit_observations_in_batches,
 )
+from guppy_ics.segmentation import assess_segmentation, write_segmentation_outputs
+from guppy_ics.segmentation.report import render_html_report
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploaded_pcaps"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -676,6 +678,54 @@ def export_firewall_csv(bus_id: str):
             "Content-Disposition": f"attachment; filename=firewall_rules_{bus_id}.csv"
         },
     )
+
+
+@router.get("/upload/segmentation.zip")
+def export_segmentation_report(bus_id: str):
+    """
+    Generate an offline segmentation assessment bundle from the completed upload.
+    """
+    state = _analysis_results.get(bus_id)
+    if not state:
+        return {"error": "analysis not found"}
+
+    temp_root = Path(tempfile.mkdtemp(prefix=f"guppy_segmentation_{bus_id}_"))
+    out_dir = temp_root / "segmentation"
+    assessment = assess_segmentation(state)
+    write_segmentation_outputs(assessment, out_dir)
+
+    zip_path = temp_root / f"segmentation_{bus_id}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(out_dir.iterdir()):
+            archive.write(path, arcname=f"segmentation/{path.name}")
+
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=f"segmentation_{bus_id}.zip",
+    )
+
+
+@router.get("/upload/segmentation", response_class=HTMLResponse)
+def view_segmentation_report(bus_id: str):
+    """
+    Render the segmentation report in the browser before downloading the bundle.
+    """
+    state = _analysis_results.get(bus_id)
+    if not state:
+        return HTMLResponse("<h1>Segmentation report unavailable</h1><p>Analysis not found.</p>", status_code=404)
+
+    assessment = assess_segmentation(state)
+    report_html = render_html_report(assessment)
+    escaped_bus_id = html.escape(str(bus_id), quote=True)
+    action_bar = f"""
+  <div style="position:sticky;top:0;background:#07110b;border-bottom:1px solid #1dd35b;padding:10px 0;margin-bottom:14px;z-index:10">
+    <a style="color:#28ff72;border:1px solid #1dd35b;padding:6px 10px;text-decoration:none;margin-right:8px" href="/upload/segmentation.zip?bus_id={escaped_bus_id}">Download segmentation assessment (ZIP)</a>
+    <a style="color:#b9ffc9" href="/upload/result?bus_id={escaped_bus_id}">Back to Guppy result</a>
+  </div>
+"""
+    report_html = report_html.replace("<body>", f"<body>{action_bar}", 1)
+    return HTMLResponse(report_html)
 
 def run_oads_enrichment(
     state,

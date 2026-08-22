@@ -9,14 +9,54 @@ body {
 
 /* Header */
 .topbar {
-    background: #000;
-    padding: 10px 20px;
+    background: #020504;
+    padding: 9px 20px;
     border-bottom: 1px solid #33ff66;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
 }
 
 .topbar h1 {
     margin: 0;
     font-size: 1.4em;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: #33ff66;
+    text-decoration: none;
+    min-width: 0;
+}
+
+.brand:hover {
+    text-decoration: none;
+}
+
+.brand-logo {
+    display: inline-block;
+    width: auto;
+    height: auto;
+    line-height: 1;
+    font-size: 1.4em;
+    flex: 0 0 auto;
+}
+
+.brand-name {
+    font-weight: bold;
+    letter-spacing: 0;
+    font-size: 1.05em;
+    white-space: nowrap;
+}
+
+.nav {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0;
 }
 
 .subtitle {
@@ -55,6 +95,20 @@ a {
 
 a:hover {
     text-decoration: underline;
+}
+
+.action-button {
+    display: inline-block;
+    padding: 7px 12px;
+    border: 1px solid #33ff66;
+    border-radius: 3px;
+    background: #000;
+    color: #66ff99;
+}
+
+.action-button:hover {
+    background: #0d2716;
+    text-decoration: none;
 }
 
 /* Utility */
@@ -297,11 +351,11 @@ pre {
 }
 
 .nav {
-    margin-top: 6px;
+    margin-top: 0;
 }
 
 .nav a {
-    margin-right: 12px;
+    margin-right: 0;
     color: #66ff99;
     font-size: 0.85em;
 }

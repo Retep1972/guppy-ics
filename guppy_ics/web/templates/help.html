@@ -156,6 +156,51 @@ Always validate rules in a test environment before deployment.
 
 <hr>
 
+<h3>Segmentation Assessment</h3>
+<p>
+The result page includes a <strong>View segmentation report</strong> button.
+This opens an offline-style report in the browser so you can review the
+segmentation assessment before downloading the full assessment bundle.
+</p>
+
+<p>
+The report uses Guppy assets, observed communications, passive identity
+evidence, and any matched OADS profile data already attached to the analysis.
+It proposes candidate functional segments and reviews communication paths
+between those segments.
+</p>
+
+<ul>
+    <li><strong>Candidate segments</strong>: Inferred functional groups such as process control, engineering, operations, OT services, video surveillance, operational audio, network management, enterprise IT, external, and unknown assets.</li>
+    <li><strong>Communication matrix</strong>: Observed paths between candidate segments, grouped by protocol and assessment.</li>
+    <li><strong>Segmentation findings</strong>: Explainable findings for risky, critical, or review-worthy cross-segment traffic.</li>
+    <li><strong>Recommended communication policy</strong>: Vendor-neutral firewall intent using actions such as ALLOW, REVIEW, and DENY-CANDIDATE.</li>
+</ul>
+
+<p>
+On the segmentation report page, use <strong>Download segmentation assessment (ZIP)</strong>
+to download the complete bundle. The bundle contains the HTML report plus JSON
+and CSV files for segments, memberships, findings, communication matrix,
+firewall intent, and summary data.
+</p>
+
+<p class="muted">
+The segmentation assessment separates what Guppy observed, what it inferred,
+and what it recommends. A PCAP proves that traffic was observed during the
+capture period; it does not prove that unseen traffic is unnecessary, that a
+firewall or VLAN exists, or that blocking unknown traffic is safe.
+Unknown communication defaults to REVIEW, not automatic deny.
+</p>
+
+<p class="muted">
+The assessment uses common OT segmentation concepts such as functional groups,
+trust boundaries, controlled communication paths, least privilege, and defence
+in depth. It is not an IEC 62443 compliance checker and does not make pass/fail
+compliance claims.
+</p>
+
+<hr>
+
 <h3>🔐 Intended Use</h3>
 <ul>
     <li>Gain situational awareness of ICS and OT networks</li>
