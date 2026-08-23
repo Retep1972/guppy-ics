@@ -1,11 +1,14 @@
 from pathlib import Path
 import html, os, uuid, threading, shutil, csv, tempfile, zipfile
 import urllib.error
+import re
+from datetime import datetime
 from io import StringIO
 from collections import defaultdict
+from typing import Optional
 
-from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 
 from guppy_ics.analysis.run import analyze_pcap
 from guppy_ics.web.deps import templates
@@ -31,6 +34,8 @@ from guppy_ics.segmentation.report import render_html_report
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploaded_pcaps"
 UPLOAD_DIR.mkdir(exist_ok=True)
+ALLOWED_PCAP_SUFFIXES = {".pcap", ".pcapng"}
+MAX_RECENT_UPLOADS = 10
 TRANSPORT_PROTOCOLS = {"ip", "tcp", "udp"}
 BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
 
@@ -39,6 +44,7 @@ _progress_buses = {}
 _cancel_tokens = {}
 _analysis_results = {}
 _analysis_oads = {}
+_analysis_errors = {}
 _oads_config = {
     "base_url": None,
 }
@@ -154,8 +160,95 @@ def normalize_function(func: str | None) -> str | None:
     return FUNCTION_NORMALIZATION.get(func, func)
 
 
-@router.get("/upload", response_class=HTMLResponse)
-def upload_page(request: Request):
+def recent_uploaded_pcaps(limit: int = MAX_RECENT_UPLOADS):
+    files = sorted(
+        _uploaded_pcap_files(),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )[:limit]
+    return [
+        {
+            "name": path.name,
+            "label": _display_upload_name(path),
+            "size": _format_size(path.stat().st_size),
+            "modified": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+        }
+        for path in files
+    ]
+
+
+def prune_uploaded_pcaps(limit: int = MAX_RECENT_UPLOADS) -> None:
+    files = sorted(
+        _uploaded_pcap_files(),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in files[limit:]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _uploaded_pcap_files():
+    return [
+        path
+        for path in UPLOAD_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in ALLOWED_PCAP_SUFFIXES
+    ]
+
+
+def _safe_upload_name(filename: str | None) -> str:
+    raw_name = Path(filename or "capture.pcap").name
+    suffix = Path(raw_name).suffix.lower()
+    stem = Path(raw_name).stem or "capture"
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-") or "capture"
+    if suffix not in ALLOWED_PCAP_SUFFIXES:
+        suffix = ".pcap"
+    return f"{stem[:80]}{suffix}"
+
+
+def _display_upload_name(path: Path) -> str:
+    name = path.name
+    if "_" in name:
+        prefix, rest = name.split("_", 1)
+        try:
+            uuid.UUID(prefix)
+            return rest
+        except ValueError:
+            pass
+    return name
+
+
+def _format_size(size: int) -> str:
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+    if size >= 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size} B"
+
+
+def _resolve_recent_pcap(name: str) -> Path | None:
+    if Path(name).name != name:
+        return None
+    candidate = (UPLOAD_DIR / Path(name).name).resolve()
+    upload_root = UPLOAD_DIR.resolve()
+    if candidate.parent != upload_root:
+        return None
+    if candidate.suffix.lower() not in ALLOWED_PCAP_SUFFIXES:
+        return None
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate
+
+
+def _capture_id_from_stored_name(path: Path) -> str:
+    display_name = _display_upload_name(path)
+    return Path(display_name).stem or path.stem
+
+
+def _upload_template_response(request: Request, *, error: str):
+    prune_uploaded_pcaps()
     oads_context = _oads_template_context()
     return templates.TemplateResponse(
         request,
@@ -163,12 +256,71 @@ def upload_page(request: Request):
         {
             "request": request,
             "protocols": available_protocols(),
+            "recent_pcaps": recent_uploaded_pcaps(),
+            "error": error,
+            **oads_context,
+        },
+    )
+
+
+def _start_background_analysis(
+    *,
+    bus_id: str,
+    pcap_path: Path,
+    capture_id: str,
+    selected_protocols,
+    oads_enabled: bool,
+    oads_url: str,
+) -> None:
+    bus = ProgressBus()
+    cancel_token = CancelToken()
+    _progress_buses[bus_id] = bus
+    _cancel_tokens[bus_id] = cancel_token
+
+    def background_analysis():
+        try:
+            state = analyze_pcap(
+                str(pcap_path),
+                enabled_protocols=selected_protocols or None,
+                progress_cb=bus.push,
+                cancel_token=cancel_token,
+            )
+
+            _analysis_oads[bus_id] = run_oads_enrichment(
+                state,
+                capture_id=capture_id,
+                enabled=oads_enabled,
+                base_url=oads_url,
+            )
+
+            _analysis_results[bus_id] = state
+        except Exception as exc:
+            _analysis_errors[bus_id] = f"PCAP analysis failed: {exc}"
+        finally:
+            bus.done()
+            _cancel_tokens.pop(bus_id, None)
+            _progress_buses.pop(bus_id, None)
+
+    threading.Thread(target=background_analysis, daemon=True).start()
+
+
+@router.get("/upload", response_class=HTMLResponse)
+def upload_page(request: Request):
+    prune_uploaded_pcaps()
+    oads_context = _oads_template_context()
+    return templates.TemplateResponse(
+        request,
+        "upload.html",
+        {
+            "request": request,
+            "protocols": available_protocols(),
+            "recent_pcaps": recent_uploaded_pcaps(),
             **oads_context,
         },
     )
 
 @router.post("/upload/run", response_class=HTMLResponse)
-async def run_upload(request: Request, pcap: UploadFile = File(...)):
+async def run_upload(request: Request, pcap: Optional[UploadFile] = File(None)):
     form = await request.form()
     selected_protocols = form.getlist("protocols")
     oads_enabled = _form_enabled(form.get("oads_enhance")) or _env_enabled("GUPPY_OADS_ENABLED")
@@ -176,41 +328,38 @@ async def run_upload(request: Request, pcap: UploadFile = File(...)):
     _remember_oads_config(oads_url)
     bus_id = str(uuid.uuid4())
 
-    bus = ProgressBus()
-    cancel_token = CancelToken()
-
-    _progress_buses[bus_id] = bus
-    _cancel_tokens[bus_id] = cancel_token
+    if not pcap or not pcap.filename:
+        return _upload_template_response(
+            request,
+            error="Choose a PCAP file or reuse one of the recent uploads.",
+        )
 
     suffix = Path(pcap.filename).suffix.lower()
-    tmp_path = UPLOAD_DIR / f"{bus_id}{suffix}"
-
-    with tmp_path.open("wb") as f:
-        shutil.copyfileobj(pcap.file, f)
-
-    def background_analysis():
-        state = analyze_pcap(
-            str(tmp_path),
-            enabled_protocols=selected_protocols or None,
-            progress_cb=bus.push,
-            cancel_token=cancel_token,
+    if suffix not in ALLOWED_PCAP_SUFFIXES:
+        return _upload_template_response(
+            request,
+            error="Only .pcap and .pcapng files are supported.",
         )
 
-        _analysis_oads[bus_id] = run_oads_enrichment(
-            state,
+    tmp_path = UPLOAD_DIR / f"{bus_id}_{_safe_upload_name(pcap.filename)}"
+
+    try:
+        with tmp_path.open("wb") as f:
+            shutil.copyfileobj(pcap.file, f)
+        prune_uploaded_pcaps()
+        _start_background_analysis(
+            bus_id=bus_id,
+            pcap_path=tmp_path,
             capture_id=Path(pcap.filename).stem or bus_id,
-            enabled=oads_enabled,
-            base_url=oads_url,
+            selected_protocols=selected_protocols,
+            oads_enabled=oads_enabled,
+            oads_url=oads_url,
         )
-
-        bus.done()
-        _analysis_results[bus_id] = state
-
-        # cleanup
-        _cancel_tokens.pop(bus_id, None)
-        _progress_buses.pop(bus_id, None)
-
-    threading.Thread(target=background_analysis, daemon=True).start()
+    except Exception as exc:
+        return _upload_template_response(
+            request,
+            error=f"Could not start PCAP analysis: {exc}",
+        )
 
     return templates.TemplateResponse(
         request,
@@ -364,21 +513,30 @@ def _media_endpoint(ip_value, port_value=None) -> str:
 
 @router.get("/upload/result", response_class=HTMLResponse)
 def upload_result(request: Request, bus_id: str):
-    
     state = _analysis_results.get(bus_id)
     if not state:
+        error = _analysis_errors.pop(bus_id, None) or "Analysis not finished or not found."
         oads_context = _oads_template_context()
         return templates.TemplateResponse(
             request,
             "upload.html",
             {
                 "request": request,
-                "error": "Analysis not finished or not found.",
+                "error": error,
                 "protocols": available_protocols(),
+                "recent_pcaps": recent_uploaded_pcaps(),
                 **oads_context,
             },
         )
 
+    return templates.TemplateResponse(
+        request,
+        "upload_result.html",
+        _result_template_context(request, state, bus_id),
+    )
+
+
+def _result_template_context(request: Request, state, bus_id: str) -> dict:
     # -------------------------
     # Assets
     # -------------------------
@@ -422,34 +580,6 @@ def upload_result(request: Request, bus_id: str):
         ips = asset.get("identifiers", {}).get("ip")
         return sorted(ips)[0] if ips else None
 
-    def asset_display(asset):
-        if not asset:
-            return "unknown"
-
-        label = asset.get("label") or asset.get("asset_id")
-
-        ids = asset.get("identifiers", {})
-
-        ips = ids.get("ip")
-        ipv6s = ids.get("ipv6")
-        macs = ids.get("mac")
-
-        # Prefer IPv4
-        if ips:
-            return f"{label} (IP: {sorted(ips)[0]})"
-
-        # Then IPv6 (explicitly marked!)
-        if ipv6s:
-            #print(ipv6s)
-            return f"{label} (IPV6: {sorted(ipv6s)[0]})"
-
-        # Finally MAC
-        if macs:
-            return f"{label} (MAC: {sorted(macs)[0]})"
-
-        return label
-
-
     # -------------------------
     # Communications + Topology
     # -------------------------
@@ -474,8 +604,8 @@ def upload_result(request: Request, bus_id: str):
         # ---------
         # Topology
         # ---------
-        src_disp = asset_display(src_asset)
-        dst_disp = asset_display(dst_asset)
+        src_disp = asset_topology_display(src_asset)
+        dst_disp = asset_topology_display(dst_asset)
 
         proto = c.get("protocol", "unknown")
         func = c.get("function")
@@ -513,18 +643,226 @@ def upload_result(request: Request, bus_id: str):
         a["visibility_label"] = label
         a["visibility_color"] = color
 
+    return {
+        "request": request,
+        "summary": state.summary(),
+        "assets": assets,
+        "communications": communications,
+        "topology": topology,
+        "evidence": summarize_evidence(getattr(state, "evidence", []), asset_labels),
+        "special_addresses": sorted(getattr(state, "special_addresses", {}).values(), key=lambda x: x.get("identifier", "")),
+        "oads_status": _analysis_oads.get(bus_id),
+    }
+
+
+@router.get("/upload/report.html")
+def export_result_report(request: Request, bus_id: str):
+    state = _analysis_results.get(bus_id)
+    if not state:
+        return HTMLResponse("<h1>Report unavailable</h1><p>Analysis not found.</p>", status_code=404)
+
+    context = _result_template_context(request, state, bus_id)
+    report = render_result_report_html(context)
+    return Response(
+        report,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="guppy_result_{_safe_report_id(bus_id)}.html"'
+        },
+    )
+
+
+def render_result_report_html(context: dict) -> str:
+    summary_rows = "".join(
+        f"<tr><th>{html.escape(str(key))}</th><td>{html.escape(str(value))}</td></tr>"
+        for key, value in (context.get("summary") or {}).items()
+    )
+
+    asset_rows = []
+    for asset in context.get("assets", []) or []:
+        asset_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(asset.get('label') or asset.get('asset_id') or ''))}</td>"
+            f"<td>{html.escape(str(asset.get('role') or ''))}</td>"
+            f"<td>{html.escape(str(asset.get('visibility_label') or ''))}</td>"
+            f"<td>{html.escape(', '.join(str(p) for p in asset.get('protocols', []) or []))}</td>"
+            f"<td>{html.escape(_identifiers_text(asset.get('identifiers', {}) or {}))}</td>"
+            f"<td>{html.escape(_summary_dict_text(asset.get('oads_summary') or {}))}</td>"
+            f"<td>{html.escape(_identity_summary_text(asset.get('identity_summary') or []))}</td>"
+            "</tr>"
+        )
+
+    comm_rows = []
+    for comm in context.get("communications", []) or []:
+        meta = comm.get("metadata", {}) or {}
+        comm_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(comm.get('protocol') or ''))}</td>"
+            f"<td>{html.escape(str(comm.get('function') or ''))}</td>"
+            f"<td>{html.escape(str(comm.get('src_label') or comm.get('src_asset_id') or ''))}</td>"
+            f"<td>{html.escape(str(comm.get('src_ip') or ''))}</td>"
+            f"<td>{html.escape(str(meta.get('src_port') or ''))}</td>"
+            f"<td>{html.escape(str(comm.get('dst_display') or comm.get('dst_label') or comm.get('dst_asset_id') or ''))}</td>"
+            f"<td>{html.escape(str(comm.get('dst_ip') or ''))}</td>"
+            f"<td>{html.escape(str(meta.get('dst_port') or ''))}</td>"
+            "</tr>"
+        )
+
+    topology_blocks = []
+    for source, edges in (context.get("topology") or {}).items():
+        edge_items = "".join(f"<li>{html.escape(str(edge))}</li>" for edge in edges)
+        topology_blocks.append(f"<li><strong>{html.escape(str(source))}</strong><ul>{edge_items}</ul></li>")
+
+    evidence_rows = []
+    for item in context.get("evidence", []) or []:
+        evidence_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('protocol') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('type') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('source') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('summary') or ''))}</td>"
+            "</tr>"
+        )
+
+    special_rows = []
+    for item in context.get("special_addresses", []) or []:
+        special_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('identifier') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('classification') or '').replace('_', ' '))}</td>"
+            f"<td>{html.escape(str(item.get('count') or 0))}</td>"
+            "</tr>"
+        )
+
+    oads_status = context.get("oads_status") or {}
+    oads_html = ""
+    if oads_status:
+        oads_html = f"""
+  <section>
+    <h2>OADS</h2>
+    <table>
+      <tbody>
+        <tr><th>Status</th><td>{html.escape(str(oads_status.get('message') or ''))}</td></tr>
+        <tr><th>Endpoint</th><td>{html.escape(str(oads_status.get('base_url') or ''))}</td></tr>
+        <tr><th>Observations built</th><td>{html.escape(str(oads_status.get('observations') or 0))}</td></tr>
+        <tr><th>Matched profiles</th><td>{html.escape(str(oads_status.get('matched') or 0))}</td></tr>
+      </tbody>
+    </table>
+  </section>
+"""
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Guppy ICS Result Report</title>
+  <style>
+    body {{ background:#07110b; color:#28ff72; font-family: Consolas, monospace; margin:24px; line-height:1.35; }}
+    h1, h2 {{ color:#55ff8a; }}
+    table {{ width:100%; border-collapse:collapse; margin:12px 0 24px; }}
+    th, td {{ border:1px solid #146b33; padding:7px; vertical-align:top; }}
+    th {{ background:#0d2716; text-align:left; }}
+    .note {{ color:#b9ffc9; max-width:980px; }}
+    ul {{ margin-top:6px; }}
+  </style>
+</head>
+<body>
+  <h1>Guppy ICS Result Report</h1>
+  <p class="note">Passive analysis report generated from the Guppy result page data. The report reflects observed capture evidence and local/OADS enrichment available at export time.</p>
+  <section>
+    <h2>Summary</h2>
+    <table><tbody>{summary_rows}</tbody></table>
+  </section>
+  {oads_html}
+  <section>
+    <h2>Assets</h2>
+    <table><thead><tr><th>Asset</th><th>Role</th><th>Visibility</th><th>Protocols</th><th>Identifiers</th><th>OADS Profile</th><th>Identity Evidence</th></tr></thead><tbody>{''.join(asset_rows)}</tbody></table>
+  </section>
+  <section>
+    <h2>Communications</h2>
+    <table><thead><tr><th>Protocol</th><th>Function</th><th>Source</th><th>Source IP</th><th>Source Port</th><th>Destination</th><th>Destination IP</th><th>Destination Port</th></tr></thead><tbody>{''.join(comm_rows)}</tbody></table>
+  </section>
+  <section>
+    <h2>Topology</h2>
+    <ul>{''.join(topology_blocks) if topology_blocks else '<li>No topology could be derived.</li>'}</ul>
+  </section>
+  <section>
+    <h2>Evidence</h2>
+    <table><thead><tr><th>Protocol</th><th>Type</th><th>Source</th><th>Summary</th></tr></thead><tbody>{''.join(evidence_rows)}</tbody></table>
+  </section>
+  <section>
+    <h2>Infrastructure Addresses</h2>
+    <table><thead><tr><th>Address</th><th>Classification</th><th>Count</th></tr></thead><tbody>{''.join(special_rows)}</tbody></table>
+  </section>
+</body>
+</html>
+"""
+
+
+def _identifiers_text(identifiers: dict) -> str:
+    parts = []
+    for key, values in identifiers.items():
+        if values:
+            parts.append(f"{str(key).upper()}: {', '.join(str(value) for value in values)}")
+    return " | ".join(parts)
+
+
+def _summary_dict_text(values: dict) -> str:
+    return " | ".join(
+        f"{str(key).replace('_', ' ')}: {value}"
+        for key, value in values.items()
+        if value not in (None, "", [], {})
+    )
+
+
+def _identity_summary_text(values: list) -> str:
+    parts = []
+    for item in values:
+        if isinstance(item, dict):
+            parts.append(f"{item.get('label')}: {item.get('value')}")
+        else:
+            label = getattr(item, "label", None)
+            value = getattr(item, "value", None)
+            if label is not None:
+                parts.append(f"{label}: {value}")
+    return " | ".join(parts)
+
+
+def _safe_report_id(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value))[:80] or "report"
+
+
+@router.post("/upload/reuse", response_class=HTMLResponse)
+async def reuse_upload(request: Request, stored_pcap: str = Form(...)):
+    form = await request.form()
+    selected_protocols = form.getlist("protocols")
+    oads_enabled = _form_enabled(form.get("oads_enhance")) or _env_enabled("GUPPY_OADS_ENABLED")
+    oads_url = _resolve_oads_url(form.get("oads_url"))
+    _remember_oads_config(oads_url)
+
+    pcap_path = _resolve_recent_pcap(stored_pcap)
+    if not pcap_path:
+        return _upload_template_response(
+            request,
+            error="The selected stored PCAP is no longer available.",
+        )
+
+    bus_id = str(uuid.uuid4())
+    _start_background_analysis(
+        bus_id=bus_id,
+        pcap_path=pcap_path,
+        capture_id=_capture_id_from_stored_name(pcap_path),
+        selected_protocols=selected_protocols,
+        oads_enabled=oads_enabled,
+        oads_url=oads_url,
+    )
+
     return templates.TemplateResponse(
         request,
-        "upload_result.html",
+        "upload_progress.html",
         {
             "request": request,
-            "summary": state.summary(),
-            "assets": assets,
-            "communications": communications,
-            "topology": topology,   
-            "evidence": summarize_evidence(getattr(state, "evidence", []), asset_labels),
-            "special_addresses": sorted(getattr(state, "special_addresses", {}).values(), key=lambda x: x.get("identifier", "")),
-            "oads_status": _analysis_oads.get(bus_id),
+            "bus_id": bus_id,
         },
     )
 

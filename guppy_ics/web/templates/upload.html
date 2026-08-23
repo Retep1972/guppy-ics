@@ -15,7 +15,35 @@
 
         <fieldset>
             <legend>PCAP file</legend>
-            <input type="file" name="pcap" required>
+            <input type="file" name="pcap" accept=".pcap,.pcapng">
+            <br><br>
+            <button type="submit">Analyze uploaded PCAP</button>
+        </fieldset>
+
+        <br>
+
+        <fieldset>
+            <legend>Reuse recent upload</legend>
+            {% if recent_pcaps %}
+                <label>
+                    Stored PCAP
+                    <select name="stored_pcap">
+                        {% for item in recent_pcaps %}
+                            <option value="{{ item.name }}">
+                                {{ item.label }} - {{ item.size }} - {{ item.modified }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <br><br>
+                <button type="submit" formaction="/upload/reuse">Analyze selected stored PCAP</button>
+                <br>
+                <span class="muted">
+                    Guppy keeps the 10 most recent uploaded PCAP/PCAPNG files and removes older uploads first.
+                </span>
+            {% else %}
+                <span class="muted">No stored PCAP files are available yet.</span>
+            {% endif %}
         </fieldset>
 
         <br>
@@ -70,8 +98,6 @@
         </fieldset>
 
         <br>
-
-        <button type="submit">Analyze PCAP</button>
     </form>
 
     <p>
